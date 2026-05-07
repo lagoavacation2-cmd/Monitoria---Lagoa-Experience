@@ -16,9 +16,10 @@ import {
   Bot,
   Send,
   Trash2,
-  Loader2
+  Loader2,
+  Download
 } from 'lucide-react';
-import { generateAuditPDF } from '../utils/pdfExport';
+import { generateAuditPDF, savePDFToStorage, getMonitoriaFileName } from '../utils/pdfExport';
 import ReactMarkdown from 'react-markdown';
 
 export default function Details() {
@@ -81,7 +82,7 @@ export default function Details() {
     setSaving(true);
     try {
       // 1. Calculate final score
-      const totalScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final) || 0), 0);
+      const totalScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0);
       const classificacao = totalScore >= 90 ? 'Excelente' : totalScore >= 80 ? 'Bom' : totalScore >= 70 ? 'Regular' : 'Crítico';
       
       // 2. Update Monitoria
@@ -114,65 +115,91 @@ export default function Details() {
   };
 
   const handleDelete = async () => {
-    if (!id || !window.confirm('Tem certeza que deseja excluir esta monitoria? Essa ação não poderá ser desfeita.')) return;
-    
-    setSaving(true);
     try {
-      console.log('Iniciando exclusão da monitoria:', id);
+      if (!id) {
+        throw new Error('ID da monitoria não informado.');
+      }
 
-      // 1. Buscar arquivos vinculados para obter storage_path
-      const { data: arquivos, error: arquivosError } = await supabase
+      const confirmar = window.confirm(
+        'Tem certeza que deseja excluir esta monitoria? Essa ação não poderá ser desfeita.'
+      );
+
+      if (!confirmar) return;
+
+      setSaving(true);
+
+      // 1. Buscar arquivos no bucket monitoria-arquivos
+      const { data: arquivos } = await supabase
         .from('arquivos_monitoria')
         .select('storage_path')
         .eq('monitoria_id', id);
-      
-      if (arquivosError) console.warn('Erro ao buscar arquivos:', arquivosError.message);
 
-      const filePaths = arquivos?.map(f => f.storage_path).filter(Boolean) || [];
+      const paths = arquivos
+        ?.map((arquivo) => arquivo.storage_path)
+        .filter(Boolean) || [];
 
-      // 2. Remover do Storage API - monitoria-arquivos
-      if (filePaths.length > 0) {
+      if (paths.length > 0) {
         const { error: storageError } = await supabase.storage
           .from('monitoria-arquivos')
-          .remove(filePaths);
-        if (storageError) console.warn('Erro ao excluir arquivos do Storage:', storageError.message);
-      }
+          .remove(paths);
 
-      // 3. Remover PDF se existir
-      if (monitoria?.pdf_nome) {
-        const { error: pdfError } = await supabase.storage
-          .from('monitoria-pdfs')
-          .remove([monitoria.pdf_nome]);
-        if (pdfError) console.warn('Erro ao excluir PDF do Storage:', pdfError.message);
-      } else if (monitoria?.pdf_url) {
-        // Fallback: extrair path da URL se pdf_nome não estiver populado
-        const pdfPath = monitoria.pdf_url.split('/monitoria-pdfs/')[1];
-        if (pdfPath) {
-          const { error: pdfError } = await supabase.storage
-            .from('monitoria-pdfs')
-            .remove([decodeURIComponent(pdfPath)]);
-          if (pdfError) console.warn('Erro ao excluir PDF via URL:', pdfError.message);
+        if (storageError) {
+          console.warn('Erro ao excluir arquivos do Storage:', storageError.message);
         }
       }
 
-      // 4. Deletar registros das tabelas públicas nesta ordem
-      const { error: chatError } = await supabase.from('chat_monitoria').delete().eq('monitoria_id', id);
+      // 2. Buscar PDF no bucket monitoria-pdfs
+      const { data: monitoriaRecord } = await supabase
+        .from('monitorias')
+        .select('pdf_nome')
+        .eq('id', id)
+        .single();
+
+      if (monitoriaRecord?.pdf_nome) {
+        const { error: pdfError } = await supabase.storage
+          .from('monitoria-pdfs')
+          .remove([monitoriaRecord.pdf_nome]);
+
+        if (pdfError) {
+          console.warn('Erro ao excluir PDF:', pdfError.message);
+        }
+      }
+
+      // 3. Excluir registros do banco em ordem sequencial
+      const { error: chatError } = await supabase
+        .from('chat_monitoria')
+        .delete()
+        .eq('monitoria_id', id);
+
       if (chatError) throw chatError;
 
-      const { error: arquivosDeleteError } = await supabase.from('arquivos_monitoria').delete().eq('monitoria_id', id);
-      if (arquivosDeleteError) throw arquivosDeleteError;
+      const { error: arquivosError } = await supabase
+        .from('arquivos_monitoria')
+        .delete()
+        .eq('monitoria_id', id);
 
-      const { error: criteriosError } = await supabase.from('monitoria_criterios').delete().eq('monitoria_id', id);
+      if (arquivosError) throw arquivosError;
+
+      const { error: criteriosError } = await supabase
+        .from('monitoria_criterios')
+        .delete()
+        .eq('monitoria_id', id);
+
       if (criteriosError) throw criteriosError;
 
-      const { error: monitoriaError } = await supabase.from('monitorias').delete().eq('id', id);
+      const { error: monitoriaError } = await supabase
+        .from('monitorias')
+        .delete()
+        .eq('id', id);
+
       if (monitoriaError) throw monitoriaError;
-      
+
       alert('Monitoria excluída com sucesso.');
       navigate('/admin/historico');
-    } catch (err: any) {
-      console.error('Erro ao excluir monitoria:', err);
-      alert('Erro ao excluir monitoria: ' + (err.message || String(err)));
+
+    } catch (error: any) {
+      console.error('Erro ao excluir monitoria:', error);
+      alert('Erro ao excluir monitoria: ' + (error?.message || 'verifique permissões.'));
     } finally {
       setSaving(false);
     }
@@ -240,35 +267,32 @@ export default function Details() {
   };
 
   const handleExportPDF = async () => {
-    const doc = generateAuditPDF(monitoria, criterios);
-    const fileName = `Monitoria_${monitoria.colaborador}_${monitoria.mes_referencia}.pdf`.replace(/\s+/g, '_');
-    
-    // Download locally
-    doc.save(fileName);
-
-    // Upload to Supabase Storage
     try {
-      const pdfBlob = doc.output('blob');
-      const storagePath = `${monitoria.id}/${Date.now()}_${fileName}`;
+      setSaving(true);
       
-      const { error: uploadError } = await supabase.storage
-        .from('monitoria-pdfs')
-        .upload(storagePath, pdfBlob);
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrl } = supabase.storage
-        .from('monitoria-pdfs')
-        .getPublicUrl(storagePath);
-
-      await supabase.from('monitorias').update({
-        pdf_nome: fileName,
-        pdf_url: publicUrl.publicUrl
-      }).eq('id', monitoria.id);
-
-      console.log('PDF saved to storage');
-    } catch (err) {
-      console.error('Error saving PDF to storage:', err);
+      // 1. Generate PDF (await because it's async now)
+      const doc = await generateAuditPDF(monitoria, criterios, arquivos);
+      
+      // 2. Prepare filename
+      const fileName = getMonitoriaFileName(monitoria);
+      
+      // 3. Download locally (MANDATORY AND FIRST)
+      doc.save(fileName);
+      
+      // 4. Try upload to storage
+      const result = await savePDFToStorage(doc, monitoria);
+      
+      if (result.success) {
+        alert('PDF gerado e salvo no Storage com sucesso!');
+        fetchDetails(); // Refresh to get pdf_url
+      } else {
+        alert('PDF gerado com sucesso. Não foi possível salvar no Storage, mas o download foi realizado.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao exportar PDF:', err);
+      alert('Erro ao gerar PDF: ' + (err.message || 'Erro desconhecido.'));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -279,7 +303,7 @@ export default function Details() {
   );
   if (!monitoria) return <div className="p-20 text-center font-bold text-gray-400">Monitoria não encontrada ou sem permissão.</div>;
 
-  const currentScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final) || 0), 0);
+  const currentScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0);
   const currentClassificacao = currentScore >= 90 ? 'Excelente' : currentScore >= 80 ? 'Bom' : currentScore >= 70 ? 'Regular' : 'Crítico';
 
   // Group by criteria for summary cards
@@ -336,7 +360,7 @@ export default function Details() {
             className="flex items-center gap-2 bg-white border border-gray-100 text-[#102B52] px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
           >
             <FileDown size={18} />
-            Exportar PDF
+            Exportar Análise em PDF
           </button>
           <button 
             onClick={handleSave}
