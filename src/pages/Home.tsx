@@ -142,6 +142,15 @@ export default function Home() {
       }
 
       if (!analise) throw new Error('Não foi possível obter a análise da IA.');
+      
+      const counts = analise.criterios.reduce((acc: any, c: any) => {
+        acc[c.status_ia] = (acc[c.status_ia] || 0) + 1;
+        return acc;
+      }, { SIM: 0, PARCIAL: 0, NÃO: 0 });
+
+      addLog(`Análise concluída: ${analise.criterios.length} itens avaliados.`);
+      addLog(`Resultado: ${counts.SIM} SIM, ${counts.PARCIAL} PARCIAL, ${counts.NÃO} NÃO.`);
+      addLog(`Nota IA recalculada: ${analise.nota_ia}%`);
 
       // 4. Recebendo e interpretando JSON
       setCurrentStep(4);

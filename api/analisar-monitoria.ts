@@ -51,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }).filter(Boolean).join('\n\n---\n\n');
 
     const promptSDR = `
-Avalie atendimento SDR. Critérios (40 itens):
+ESTE É UM ATENDIMENTO SDR. AVALIE TODOS OS 40 ITENS ABAIXO:
 1.1 Saudação voz (2.5), 1.2 ID Empresa/Cargo (2.5), 1.3 Nome Cliente (2.5), 1.4 Tempo (2.5)
 2.1 Cadastro (2.5), 2.2 Lagoa Vacation (2.5), 2.3 Desconto 50% (2.5), 2.4 Emoção (2.5), 2.5 Conhece Caldas (2.5), 2.6 Experiência Ant. (2.5)
 3.1 90 min (3), 3.2 Obrigatória (3), 3.3 Casal/Sem Compro. (3), 3.4 Dúvidas (3)
@@ -62,7 +62,7 @@ Avalie atendimento SDR. Critérios (40 itens):
 `;
 
     const promptCloser = `
-Avalie atendimento Closer. Critérios (40 itens):
+ESTE É UM ATENDIMENTO CLOSER. AVALIE TODOS OS 40 ITENS ABAIXO:
 1.1 Saudação (2), 1.2 Supervisor SDR (2), 1.3 Retomou Info (2), 1.4 Segurança (2)
 2.1 Conceito (2.5), 2.2 Desconto 50% (2.5), 2.3 Diferenciais (2.5), 2.4 Emoção (2.5)
 3.1 Balcão (3.5), 3.2 Promo (3.5), 3.3 Incluso (3.5), 3.4 Vantagem (3.5)
@@ -75,15 +75,45 @@ Avalie atendimento Closer. Critérios (40 itens):
 `;
 
     const mainPrompt = `
-Atendimento [${tipo}]. 
-Texto: ${contextFiles}
+Você é uma IA especialista em monitoria do Lagoa Experience.
+Analise o atendimento de [${tipo}] abaixo.
 
+TEXTO DO ATENDIMENTO:
+${contextFiles}
+
+CRITÉRIOS OBRIGATÓRIOS:
 ${tipo === 'SDR' ? promptSDR : promptCloser}
 
-Responda APENAS JSON:
+REGRAS DE AVALIAÇÃO:
+- SIM: Atendido totalmente (100% do peso).
+- PARCIAL: Atendido em partes ou com falhas (50% do peso).
+- NÃO: Não atendido ou não identificado (0% do peso).
+
+EXIGÊNCIA DE PROFUNDIDADE:
+1. Comentários (comentario_ia) devem ser DETALHADOS (mínimo 2 frases), explicando o MOTIVO da nota, IMPACTO no cliente e como MELHORAR.
+2. Identifique a FONTE DA EVIDÊNCIA (trecho do texto).
+3. Resumo geral deve ter 2 parágrafos profundos.
+4. Feedback ao colaborador deve ser motivacional, humano e pronto para uso pelo gestor.
+
+RESPONDA APENAS JSON:
 {
-  "criterios": [{ "codigo": "1.1", "status_ia": "SIM/PARCIAL/NÃO", "comentario_ia": "", "fonte_evidencia": "" }],
-  "resumo_geral": "", "pontos_fortes": "", "pontos_melhoria": ""
+  "resumo_geral": "mínimo 2 parágrafos",
+  "pontos_fortes": "lista",
+  "pontos_melhoria": "lista",
+  "feedback_colaborador": "humanizado e profundo",
+  "plano_acao": "detalhado",
+  "orientacao_treinamento": "focado nos gaps",
+  "falhas_criticas": "identificação de falhas graves",
+  "impacto_falhas": "consequência no negócio",
+  "criterios": [
+    {
+      "codigo": "1.1", 
+      "status_ia": "SIM/PARCIAL/NÃO", 
+      "comentario_ia": "detalhado", 
+      "fonte_evidencia": "trecho exato",
+      "orientacao_correcao": "passo a passo"
+    }
+  ]
 }
 `;
 
@@ -274,7 +304,14 @@ Responda APENAS JSON:
       const classificacao = classificarNota(notaIA);
 
       return res.status(200).json({
-        ...jsonResult,
+        resumo_geral: jsonResult.resumo_geral || "",
+        pontos_fortes: jsonResult.pontos_fortes || "",
+        pontos_melhoria: jsonResult.pontos_melhoria || "",
+        feedback_colaborador: jsonResult.feedback_colaborador || "",
+        plano_acao: jsonResult.plano_acao || "",
+        orientacao_treinamento: jsonResult.orientacao_treinamento || "",
+        falhas_criticas: jsonResult.falhas_criticas || "",
+        impacto_falhas: jsonResult.impacto_falhas || "",
         nota_ia: Math.round(notaIA * 10) / 10,
         nota_final: Math.round(notaIA * 10) / 10,
         classificacao: classificacao,

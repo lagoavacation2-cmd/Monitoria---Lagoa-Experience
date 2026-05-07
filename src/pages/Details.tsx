@@ -655,8 +655,6 @@ export default function Details() {
               ))}
             </div>
           </div>
-
-          {/* Feedback & Action Plan */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 relative overflow-hidden group">
               <h3 className="font-black text-[#0B1F3A] mb-6 flex items-center gap-3">
@@ -678,6 +676,28 @@ export default function Details() {
               </h3>
               <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
                 <ReactMarkdown>{monitoria.plano_acao}</ReactMarkdown>
+              </div>
+            </div>
+            <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 relative overflow-hidden group lg:col-span-2">
+              <h3 className="font-black text-[#0B1F3A] mb-6 flex items-center gap-3">
+                <div className="p-2 bg-emerald-50 rounded-lg group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                  <MessageSquare size={18} />
+                </div>
+                Feedback Humanizado ao Colaborador
+              </h3>
+              <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
+                <ReactMarkdown>{monitoria.feedback_colaborador}</ReactMarkdown>
+              </div>
+            </div>
+            <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 relative overflow-hidden group lg:col-span-2">
+              <h3 className="font-black text-[#0B1F3A] mb-6 flex items-center gap-3">
+                <div className="p-2 bg-purple-50 rounded-lg group-hover:bg-purple-500 group-hover:text-white transition-all">
+                  <BookOpen size={18} />
+                </div>
+                Orientação de Treinamento
+              </h3>
+              <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
+                <ReactMarkdown>{monitoria.orientacao_treinamento}</ReactMarkdown>
               </div>
             </div>
           </div>
