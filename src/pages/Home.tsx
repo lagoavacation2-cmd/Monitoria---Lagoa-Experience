@@ -124,6 +124,8 @@ export default function Home() {
           nota_ia: analise.nota_ia,
           nota_final: analise.nota_final,
           classificacao_ia: analise.classificacao,
+          classificacao_final: analise.classificacao,
+          classificacao: analise.classificacao,
           resumo_geral: analise.resumo_geral,
           pontos_fortes: analise.pontos_fortes,
           pontos_melhoria: analise.pontos_melhoria,
@@ -142,13 +144,30 @@ export default function Home() {
       addLog('Salvando critérios detalhados...');
       const criteriosToInsert = analise.criterios.map((c: any) => ({
         monitoria_id: monitoria.id,
-        ...c,
-        status_final: c.status_ia,
-        pontuacao_final: c.pontuacao_ia,
+        codigo: c.codigo || '',
+        criterio: c.criterio || '',
+        item_avaliado: c.item_avaliado || '',
+        peso: Number(c.peso || 0),
+        pontuacao_ia: Number(c.pontuacao_ia || 0),
+        status_ia: c.status_ia || 'NÃO',
+        comentario_ia: c.comentario_ia || '',
+        status_final: c.status_ia || 'NÃO',
+        pontuacao_final: Number(c.pontuacao_ia || 0),
+        fonte_evidencia: c.fonte_evidencia || 'Não identificado',
+        orientacao_correcao: c.orientacao_correcao || '',
+        observacao_admin: '',
+        perda_pontos: Number(c.peso || 0) - Number(c.pontuacao_ia || 0),
+        ajustado_manualmente: false
       }));
 
       const { error: critError } = await supabase.from('monitoria_criterios').insert(criteriosToInsert);
-      if (critError) throw new Error('Erro ao salvar critérios: ' + critError.message);
+      
+      if (critError) {
+        if (critError.message.includes('schema cache')) {
+          throw new Error('O banco foi atualizado, mas o Supabase ainda não recarregou o schema. Por favor, aguarde 30 segundos e tente analisar novamente.');
+        }
+        throw new Error('Erro ao salvar critérios: ' + critError.message);
+      }
 
       // 7. Salvando arquivos no Storage (Opcional)
       setCurrentStep(6);

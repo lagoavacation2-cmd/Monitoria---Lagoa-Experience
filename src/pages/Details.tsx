@@ -78,19 +78,28 @@ export default function Details() {
     setCriterios(newCriterios);
   };
 
+  const classificarNota = (nota: number) => {
+    if (nota >= 90) return 'Excelente atendimento';
+    if (nota >= 80) return 'Bom atendimento';
+    if (nota >= 70) return 'Atendimento regular';
+    if (nota >= 60) return 'Abaixo do esperado';
+    return 'Atendimento crítico';
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       // 1. Calculate final score
-      const totalScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0);
-      const classificacao = totalScore >= 90 ? 'Excelente' : totalScore >= 80 ? 'Bom' : totalScore >= 70 ? 'Regular' : 'Crítico';
+      const totalScore = Math.round(criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0) * 10) / 10;
+      const classificacao = classificarNota(totalScore);
       
       // 2. Update Monitoria
       await supabase.from('monitorias').update({
         nota_final: totalScore,
-        classificacao_ia: classificacao, // Updates main classification
+        classificacao_final: classificacao,
+        classificacao: classificacao,
         revisada_manualmente: true,
-        revisada_por: user || 'Administrador',
+        revisada_por: user?.email || 'Administrador',
         revisada_em: new Date().toISOString()
       }).eq('id', id);
 
