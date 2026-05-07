@@ -49,51 +49,68 @@ export default function History() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | null) => {
+    if (!id) return;
     if (window.confirm('Tem certeza que deseja excluir esta monitoria? Essa ação não poderá ser desfeita.')) {
       setLoading(true);
       try {
-        // 1. Fetch related files for storage cleanup
-        const { data: files } = await supabase.from('arquivos_monitoria').select('storage_path').eq('monitoria_id', id);
-        
-        // 2. Find monitoria in state for PDF cleanup
-        const monitoria = monitorias.find(m => m.id === id);
+        console.log('Iniciando exclusão da monitoria:', id);
 
-        // 3. Delete from monitoria-arquivos bucket
-        const paths = files?.map(f => f.storage_path).filter(Boolean) || [];
-        if (paths.length > 0) {
+        // 1. Buscar arquivos vinculados
+        const { data: arquivos, error: arquivosError } = await supabase
+          .from('arquivos_monitoria')
+          .select('storage_path')
+          .eq('monitoria_id', id);
+        
+        if (arquivosError) console.warn('Erro ao buscar arquivos:', arquivosError.message);
+
+        // 2. Encontrar monitoria no estado local para dados de PDF
+        const monitoria = monitorias.find(m => m.id === id);
+        const filePaths = arquivos?.map(f => f.storage_path).filter(Boolean) || [];
+
+        // 3. Remover do Storage API - monitoria-arquivos
+        if (filePaths.length > 0) {
           const { error: storageError } = await supabase.storage
             .from('monitoria-arquivos')
-            .remove(paths);
-          if (storageError) console.warn('Erro ao excluir arquivos:', storageError.message);
+            .remove(filePaths);
+          if (storageError) console.warn('Erro ao excluir arquivos do Storage:', storageError.message);
         }
-        
-        // 4. Delete PDF from monitoria-pdfs bucket
-        if (monitoria?.pdf_url) {
+
+        // 4. Remover PDF do Storage API - monitoria-pdfs
+        if (monitoria?.pdf_nome) {
+          const { error: pdfError } = await supabase.storage
+            .from('monitoria-pdfs')
+            .remove([monitoria.pdf_nome]);
+          if (pdfError) console.warn('Erro ao excluir PDF do Storage:', pdfError.message);
+        } else if (monitoria?.pdf_url) {
           const pdfPath = monitoria.pdf_url.split('/monitoria-pdfs/')[1];
           if (pdfPath) {
             const { error: pdfError } = await supabase.storage
               .from('monitoria-pdfs')
               .remove([decodeURIComponent(pdfPath)]);
-            if (pdfError) console.warn('Erro ao excluir PDF:', pdfError.message);
+            if (pdfError) console.warn('Erro ao excluir PDF via URL:', pdfError.message);
           }
         }
 
-        // 5. Delete related records in order
-        await supabase.from('chat_monitoria').delete().eq('monitoria_id', id);
-        await supabase.from('arquivos_monitoria').delete().eq('monitoria_id', id);
-        await supabase.from('monitoria_criterios').delete().eq('monitoria_id', id);
-        
-        // 6. Delete main record
-        const { error } = await supabase.from('monitorias').delete().eq('id', id);
-        
-        if (error) throw error;
+        // 5. Deletar registros sequencialmente
+        const { error: chatError } = await supabase.from('chat_monitoria').delete().eq('monitoria_id', id);
+        if (chatError) throw chatError;
+
+        const { error: arquivosDeleteError } = await supabase.from('arquivos_monitoria').delete().eq('monitoria_id', id);
+        if (arquivosDeleteError) throw arquivosDeleteError;
+
+        const { error: criteriosError } = await supabase.from('monitoria_criterios').delete().eq('monitoria_id', id);
+        if (criteriosError) throw criteriosError;
+
+        const { error: monitoriaError } = await supabase.from('monitorias').delete().eq('id', id);
+        if (monitoriaError) throw monitoriaError;
         
         alert('Monitoria excluída com sucesso.');
-        fetchMonitorias(); // Refresh list
-      } catch (err) {
-        console.error('Erro ao excluir:', err);
-        alert('Erro ao excluir monitoria: ' + (err instanceof Error ? err.message : String(err)));
+        fetchMonitorias(); // Recarregar histórico
+        // Dashboard será atualizado via realtime se implementado, ou recarregado na próxima visita
+      } catch (err: any) {
+        console.error('Erro ao excluir monitoria:', err);
+        alert('Erro ao excluir monitoria: ' + (err.message || String(err)));
       } finally {
         setLoading(false);
       }

@@ -118,42 +118,61 @@ export default function Details() {
     
     setSaving(true);
     try {
-      // 1. Fetch related files for storage cleanup
-      const { data: files } = await supabase.from('arquivos_monitoria').select('storage_path').eq('monitoria_id', id);
+      console.log('Iniciando exclusão da monitoria:', id);
+
+      // 1. Buscar arquivos vinculados para obter storage_path
+      const { data: arquivos, error: arquivosError } = await supabase
+        .from('arquivos_monitoria')
+        .select('storage_path')
+        .eq('monitoria_id', id);
       
-      // 2. Delete from monitoria-arquivos bucket
-      const paths = files?.map(f => f.storage_path).filter(Boolean) || [];
-      if (paths.length > 0) {
+      if (arquivosError) console.warn('Erro ao buscar arquivos:', arquivosError.message);
+
+      const filePaths = arquivos?.map(f => f.storage_path).filter(Boolean) || [];
+
+      // 2. Remover do Storage API - monitoria-arquivos
+      if (filePaths.length > 0) {
         const { error: storageError } = await supabase.storage
           .from('monitoria-arquivos')
-          .remove(paths);
-        if (storageError) console.warn('Erro ao excluir arquivos:', storageError.message);
+          .remove(filePaths);
+        if (storageError) console.warn('Erro ao excluir arquivos do Storage:', storageError.message);
       }
 
-      // 3. Delete PDF from monitoria-pdfs bucket
-      if (monitoria?.pdf_url) {
+      // 3. Remover PDF se existir
+      if (monitoria?.pdf_nome) {
+        const { error: pdfError } = await supabase.storage
+          .from('monitoria-pdfs')
+          .remove([monitoria.pdf_nome]);
+        if (pdfError) console.warn('Erro ao excluir PDF do Storage:', pdfError.message);
+      } else if (monitoria?.pdf_url) {
+        // Fallback: extrair path da URL se pdf_nome não estiver populado
         const pdfPath = monitoria.pdf_url.split('/monitoria-pdfs/')[1];
         if (pdfPath) {
           const { error: pdfError } = await supabase.storage
             .from('monitoria-pdfs')
             .remove([decodeURIComponent(pdfPath)]);
-          if (pdfError) console.warn('Erro ao excluir PDF:', pdfError.message);
+          if (pdfError) console.warn('Erro ao excluir PDF via URL:', pdfError.message);
         }
       }
 
-      // 4. Delete records in order
-      await supabase.from('chat_monitoria').delete().eq('monitoria_id', id);
-      await supabase.from('arquivos_monitoria').delete().eq('monitoria_id', id);
-      await supabase.from('monitoria_criterios').delete().eq('monitoria_id', id);
-      const { error } = await supabase.from('monitorias').delete().eq('id', id);
-      
-      if (error) throw error;
+      // 4. Deletar registros das tabelas públicas nesta ordem
+      const { error: chatError } = await supabase.from('chat_monitoria').delete().eq('monitoria_id', id);
+      if (chatError) throw chatError;
+
+      const { error: arquivosDeleteError } = await supabase.from('arquivos_monitoria').delete().eq('monitoria_id', id);
+      if (arquivosDeleteError) throw arquivosDeleteError;
+
+      const { error: criteriosError } = await supabase.from('monitoria_criterios').delete().eq('monitoria_id', id);
+      if (criteriosError) throw criteriosError;
+
+      const { error: monitoriaError } = await supabase.from('monitorias').delete().eq('id', id);
+      if (monitoriaError) throw monitoriaError;
       
       alert('Monitoria excluída com sucesso.');
       navigate('/admin/historico');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao excluir monitoria:', err);
-      alert('Erro ao excluir monitoria: ' + (err instanceof Error ? err.message : String(err)));
+      alert('Erro ao excluir monitoria: ' + (err.message || String(err)));
     } finally {
       setSaving(false);
     }
@@ -187,7 +206,17 @@ export default function Details() {
         })
       });
 
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error('A rota /api/chat-monitoria não retornou JSON. Resposta: ' + text.slice(0, 100));
+      }
+
       const resData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(resData.error || 'Falha na resposta do assistente.');
+      }
 
       // Save IA message
       const { data: iaMsgData } = await supabase.from('chat_monitoria').insert({
@@ -253,6 +282,43 @@ export default function Details() {
   const currentScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final) || 0), 0);
   const currentClassificacao = currentScore >= 90 ? 'Excelente' : currentScore >= 80 ? 'Bom' : currentScore >= 70 ? 'Regular' : 'Crítico';
 
+  // Group by criteria for summary cards
+  const criteriaData = criterios.reduce((acc: any, curr) => {
+    const key = curr.criterio;
+    if (!acc[key]) {
+      acc[key] = {
+        name: key,
+        max: 0,
+        obtained: 0,
+        sim: 0,
+        parcial: 0,
+        nao: 0,
+        items: []
+      };
+    }
+    acc[key].max += Number(curr.peso);
+    acc[key].obtained += Number(curr.pontuacao_final || curr.pontuacao_ia || 0);
+    const status = curr.status_final || curr.status_ia;
+    if (status === 'SIM') acc[key].sim++;
+    else if (status === 'PARCIAL') acc[key].parcial++;
+    else acc[key].nao++;
+    
+    acc[key].items.push(curr);
+    return acc;
+  }, {});
+
+  const criteriaArray = Object.values(criteriaData);
+  
+  const totalSim = criterios.filter(c => (c.status_final || c.status_ia) === 'SIM').length;
+  const totalParcial = criterios.filter(c => (c.status_final || c.status_ia) === 'PARCIAL').length;
+  const totalNao = criterios.filter(c => (c.status_final || c.status_ia) === 'NÃO').length;
+  const conformity = ((currentScore / 100) * 100).toFixed(1);
+
+  // Find biggest gap
+  const sortedByLoss = [...criteriaArray].sort((a: any, b: any) => (b.max - b.obtained) - (a.max - a.obtained));
+  const biggestGap = (sortedByLoss[0] as any)?.name || 'N/A';
+  const bestPerformance = ([...criteriaArray].sort((a: any, b: any) => (b.obtained / b.max) - (a.obtained / a.max))[0] as any)?.name || 'N/A';
+
   return (
     <div className="space-y-8 pb-20">
       {/* Header Buttons */}
@@ -292,53 +358,133 @@ export default function Details() {
       </div>
 
       {/* Main Stats Banner */}
-      <div className="bg-[#102B52] rounded-[2.5rem] p-12 text-white grid grid-cols-1 md:grid-cols-4 gap-8 shadow-2xl relative overflow-hidden">
-        <div className="relative z-10">
-          <p className="text-[#4DA8FF] text-[10px] uppercase font-black tracking-[0.3em] mb-3">Score Atualizado</p>
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-7xl font-black tracking-tighter">{currentScore}</h2>
-            <span className="text-2xl font-bold opacity-30">/ 100</span>
-          </div>
-          <div className={`mt-4 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border ${
-             currentClassificacao === 'Excelente' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' :
-             currentClassificacao === 'Bom' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
-             'bg-red-500/20 border-red-500/30 text-red-400'
-          }`}>
-            {currentClassificacao}
-          </div>
-        </div>
-        <div className="relative z-10 flex flex-col justify-end">
-          <p className="text-gray-400 text-[10px] uppercase font-black tracking-widest mb-1">Colaborador</p>
-          <p className="text-2xl font-black tracking-tight">{monitoria.colaborador}</p>
-          <p className="text-xs text-[#4DA8FF] font-bold uppercase tracking-widest mt-1">{monitoria.tipo_atendimento}</p>
-        </div>
-        <div className="relative z-10 flex flex-col justify-end">
-          <p className="text-gray-400 text-[10px] uppercase font-black tracking-widest mb-1">Período de Ref.</p>
-          <p className="text-2xl font-black tracking-tight uppercase">{monitoria.mes_referencia}</p>
-          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Ref. Monitoria #{monitoria.numero_monitoria_mes}</p>
-        </div>
-        <div className="relative z-10 flex flex-col justify-end">
-          <p className="text-gray-400 text-[10px] uppercase font-black tracking-widest mb-1">Status da Auditoria</p>
-          {monitoria.revisada_manualmente ? (
-            <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/30 px-4 py-3 rounded-2xl">
-              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
-              <div>
-                <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Revisada Manualmente</p>
-                <p className="text-[8px] text-purple-400/60 font-bold uppercase overflow-hidden truncate max-w-[120px]">Por: {monitoria.revisada_por}</p>
-              </div>
+      <div className="bg-[#102B52] rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 relative z-10">
+          <div>
+            <p className="text-[#4DA8FF] text-[10px] uppercase font-black tracking-[0.3em] mb-3">Score Final Auditado</p>
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-7xl font-black tracking-tighter">{currentScore}</h2>
+              <span className="text-2xl font-bold opacity-30">/ 100</span>
             </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-[#4DA8FF]/10 border border-[#4DA8FF]/30 px-4 py-3 rounded-2xl">
-              <div className="w-2 h-2 rounded-full bg-[#4DA8FF] animate-pulse"></div>
-              <div>
-                 <p className="text-[10px] font-black text-[#4DA8FF] uppercase tracking-widest">IA Original</p>
-                 <p className="text-[8px] text-[#4DA8FF]/60 font-bold uppercase">Awaiting admin review</p>
-              </div>
+            <div className={`mt-4 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border ${
+               currentClassificacao === 'Excelente' ? 'bg-emerald-400 border-emerald-500 text-white' :
+               currentClassificacao === 'Bom' ? 'bg-blue-400 border-blue-500 text-white' :
+               currentClassificacao === 'Regular' ? 'bg-amber-400 border-amber-500 text-white' :
+               'bg-red-500 border-red-600 text-white'
+            }`}>
+              {currentClassificacao}
             </div>
-          )}
+          </div>
+          
+          <div className="space-y-4">
+             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nota Original IA</p>
+                <p className="text-2xl font-black">{monitoria.nota_ia}%</p>
+             </div>
+             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Conformidade Global</p>
+                <p className="text-2xl font-black text-[#4DA8FF]">{conformity}%</p>
+             </div>
+          </div>
+
+          <div className="space-y-4">
+             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Itens Atendidos</p>
+                <div className="flex gap-2 mt-1">
+                   <span className="text-emerald-400 font-black">{totalSim} S</span>
+                   <span className="text-amber-400 font-black">{totalParcial} P</span>
+                   <span className="text-red-400 font-black">{totalNao} N</span>
+                </div>
+             </div>
+             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status Feedback</p>
+                <p className="text-xs font-black uppercase tracking-widest text-[#4DA8FF]">{monitoria.status_feedback || 'PENDENTE'}</p>
+             </div>
+          </div>
+
+          <div className="space-y-4">
+             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Maior Gap (Gargalo)</p>
+                <p className="text-xs font-black truncate">{biggestGap}</p>
+             </div>
+             <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Melhor Desempenho</p>
+                <p className="text-xs font-black truncate">{bestPerformance}</p>
+             </div>
+          </div>
         </div>
+        
+        {/* User Info Layer */}
+        <div className="mt-10 pt-8 border-t border-white/5 flex flex-wrap items-center justify-between gap-6 relative z-10">
+           <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                 <User className="text-[#4DA8FF]" size={20} />
+              </div>
+              <div>
+                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-tight">Colaborador Avaliado</p>
+                 <h4 className="text-lg font-black">{monitoria.colaborador}</h4>
+              </div>
+           </div>
+           <div className="flex gap-10">
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-tight">Mes Referência</p>
+                <p className="font-bold text-[#4DA8FF] uppercase">{monitoria.mes_referencia}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-tight">Auditado por</p>
+                <p className="font-bold">{monitoria.revisada_manualmente ? monitoria.revisada_por : 'IA LAGOABOT'}</p>
+              </div>
+           </div>
+        </div>
+
         {/* Background Accent */}
         <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-[#4DA8FF]/10 rounded-full blur-[100px]"></div>
+      </div>
+
+      {/* Criteria Cards Conformity View */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+         {criteriaArray.map((group: any, idx) => {
+            const perc = ((group.obtained / group.max) * 100).toFixed(0);
+            return (
+              <div key={idx} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 flex flex-col justify-between group hover:shadow-xl transition-all">
+                <div>
+                   <div className="flex justify-between items-start mb-4">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{group.name}</span>
+                      <span className={`text-[10px] font-black px-2 py-1 rounded-full ${
+                        Number(perc) === 100 ? 'bg-emerald-100 text-emerald-600' : 
+                        Number(perc) >= 70 ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'
+                      }`}>{perc}%</span>
+                   </div>
+                   <div className="w-full bg-gray-100 h-1.5 rounded-full mb-6 overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                           Number(perc) === 100 ? 'bg-emerald-500' : Number(perc) >= 70 ? 'bg-blue-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${perc}%` }}
+                      ></div>
+                   </div>
+                   <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+                      <div className="p-2 bg-gray-50 rounded-xl">
+                         <p className="text-[8px] font-black text-gray-400 uppercase">SIM</p>
+                         <p className="text-xs font-black text-emerald-500">{group.sim}</p>
+                      </div>
+                      <div className="p-2 bg-gray-50 rounded-xl">
+                         <p className="text-[8px] font-black text-gray-400 uppercase">PARC</p>
+                         <p className="text-xs font-black text-amber-500">{group.parcial}</p>
+                      </div>
+                      <div className="p-2 bg-gray-50 rounded-xl">
+                         <p className="text-[8px] font-black text-gray-400 uppercase">NÃO</p>
+                         <p className="text-xs font-black text-red-500">{group.nao}</p>
+                      </div>
+                   </div>
+                </div>
+                <div className="pt-4 border-t border-gray-50 flex justify-between items-center text-[10px] font-black uppercase text-gray-400">
+                   <span>Nota Obtida</span>
+                   <span className="text-[#102B52]">{group.obtained.toFixed(1)} / {group.max}</span>
+                </div>
+              </div>
+            );
+         })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -361,6 +507,8 @@ export default function Details() {
                         <span className="text-[10px] font-black text-[#4DA8FF] uppercase tracking-[0.2em]">{c.criterio}</span>
                         <div className="w-1 h-1 bg-gray-200 rounded-full"></div>
                         <span className="text-[10px] font-bold text-gray-300 uppercase">Peso: {c.peso}</span>
+                        <div className="w-1 h-1 bg-gray-200 rounded-full"></div>
+                        <span className="text-[10px] font-black text-red-400 uppercase">Perda: {(Number(c.peso) - Number(c.pontuacao_final || c.pontuacao_ia || 0)).toFixed(1)}</span>
                       </div>
                       <h4 className="font-black text-[#0B1F3A] text-xl leading-tight mb-4 group-hover:text-[#4DA8FF] transition-colors">{c.item_avaliado}</h4>
                       
@@ -374,6 +522,10 @@ export default function Details() {
                              )}
                           </div>
                           <p className="italic text-gray-600">"{c.comentario_ia}"</p>
+                          <div className="mt-4 p-4 bg-white/50 rounded-2xl border border-[#4DA8FF]/10">
+                             <p className="text-[9px] font-black uppercase text-[#4DA8FF] tracking-widest mb-1">Orientação de Correção</p>
+                             <p className="text-xs font-bold text-gray-700">{c.orientacao_correcao || 'Nenhuma orientação específica.'}</p>
+                          </div>
                           <div className="mt-3 flex items-center gap-2">
                              <span className="text-[9px] font-black uppercase text-gray-400">Status IA:</span>
                              <span className={`text-[9px] font-black uppercase ${

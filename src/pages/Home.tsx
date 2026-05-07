@@ -84,9 +84,19 @@ export default function Home() {
         }),
       });
 
+      const contentType = response.headers.get('content-type') || '';
+
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(
+          'A rota /api/analisar-monitoria não retornou JSON. Resposta do servidor: ' + text.slice(0, 200)
+        );
+      }
+
+      const analise = await response.json();
+
       if (!response.ok) {
-        const err = await response.json();
-        const errorMessage = err.error || err.message || 'Falha na análise da IA';
+        const errorMessage = analise.error || analise.message || 'Falha na análise da IA';
         
         if (errorMessage.includes('API_KEY_INVALID') || errorMessage.includes('invalid API key')) {
           throw new Error('A Chave API do OpenRouter é inválida. Por favor, verifique as configurações no OpenRouter.');
@@ -97,8 +107,6 @@ export default function Home() {
         
         throw new Error(errorMessage);
       }
-
-      const analise = await response.json();
       console.log("Análise concluída");
 
       // 3. Save to Supabase (Monitoria)
