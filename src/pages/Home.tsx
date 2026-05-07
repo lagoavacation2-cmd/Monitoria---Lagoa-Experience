@@ -15,6 +15,8 @@ export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState<number>(0);
+  const [analysisLogs, setAnalysisLogs] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<{ ok: boolean; bucketsOk?: boolean; message: string } | null>(null);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -42,36 +44,44 @@ export default function Home() {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const addLog = (message: string) => {
+    setAnalysisLogs((prev) => [...prev, `${new Date().toLocaleTimeString()} - ${message}`]);
+    console.log(`[Análise] ${message}`);
+  };
+
   const handleAnalise = async () => {
-    console.log("Iniciando análise");
-    if (!connectionStatus?.ok) {
-      console.error("Falha na conexão com Supabase");
-      setError(connectionStatus?.message || 'Erro de conexão com o banco.');
-      return;
-    }
     if (!colaborador || !avaliador || files.length === 0) {
-      console.warn("Validação falhou: campos obrigatórios ou arquivos ausentes");
       setError('Por favor, preencha os campos obrigatórios e anexe pelo menos um arquivo.');
       return;
     }
 
-    console.log("Arquivos selecionados:", files.map(f => f.name));
     setLoading(true);
     setError(null);
-    setStorageWarning(null);
+    setAnalysisLogs([]);
+    setCurrentStep(1);
 
     try {
-      console.log("Extraindo texto...");
-      // 1. Extract text from all files
+      // 1. Validando campos
+      addLog('Validando campos obrigatórios...');
+      if (!tipo || !colaborador || !avaliador) throw new Error('Campos obrigatórios ausentes.');
+      
+      // 2. Lendo arquivos e extraindo texto
+      setCurrentStep(2);
+      addLog(`Lendo ${files.length} arquivo(s)...`);
       const fileData = await Promise.all(
-        files.map(async (f) => ({
-          nome: f.name,
-          conteudo: await extractTextFromFile(f),
-        }))
+        files.map(async (f) => {
+          addLog(`Extraindo texto de: ${f.name}`);
+          const text = await extractTextFromFile(f);
+          addLog(`Texto extraído (${text.length} caracteres) de: ${f.name}`);
+          return { nome: f.name, conteudo: text };
+        })
       );
 
-      console.log("Enviando para IA...");
-      // 2. Call backend for AI Analysis
+      // 3. Preparando prompt e enviando para IA
+      setCurrentStep(3);
+      addLog('Enviando dados para processamento da IA (OpenRouter)...');
+      addLog('Aguardando resposta da IA (pode levar até 60 segundos)...');
+
       const response = await fetch('/api/analisar-monitoria', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -85,31 +95,23 @@ export default function Home() {
       });
 
       const contentType = response.headers.get('content-type') || '';
-
       if (!contentType.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(
-          'A rota /api/analisar-monitoria não retornou JSON. Resposta do servidor: ' + text.slice(0, 200)
-        );
+        const rawText = await response.text();
+        throw new Error('A IA não retornou um formato válido. Resposta: ' + rawText.slice(0, 200));
       }
 
       const analise = await response.json();
+      if (!response.ok) throw new Error(analise.error || 'Erro na análise da IA');
 
-      if (!response.ok) {
-        const errorMessage = analise.error || analise.message || 'Falha na análise da IA';
-        
-        if (errorMessage.includes('API_KEY_INVALID') || errorMessage.includes('invalid API key')) {
-          throw new Error('A Chave API do OpenRouter é inválida. Por favor, verifique as configurações no OpenRouter.');
-        }
-        if (errorMessage.includes('not configured') || errorMessage.includes('não configurada')) {
-          throw new Error('A Chave API do OpenRouter não foi encontrada. Configure OPENROUTER_API_KEY no painel de Segredos/Variáveis.');
-        }
-        
-        throw new Error(errorMessage);
-      }
-      console.log("Análise concluída");
+      // 4. Recebendo e interpretando JSON
+      setCurrentStep(4);
+      addLog('Resposta recebida e processada com sucesso.');
+      addLog(`Nota IA: ${analise.nota_ia}% | Classificação: ${analise.classificacao}`);
 
-      // 3. Save to Supabase (Monitoria)
+      // 5. Salvando no Supabase
+      setCurrentStep(5);
+      addLog('Salvando registro da monitoria no banco de dados...');
+      
       const { data: monitoria, error: dbError } = await supabase
         .from('monitorias')
         .insert({
@@ -121,7 +123,7 @@ export default function Home() {
           quantidade_arquivos: files.length,
           nota_ia: analise.nota_ia,
           nota_final: analise.nota_final,
-          classificacao_ia: analise.classificacao_ia,
+          classificacao_ia: analise.classificacao,
           resumo_geral: analise.resumo_geral,
           pontos_fortes: analise.pontos_fortes,
           pontos_melhoria: analise.pontos_melhoria,
@@ -130,14 +132,14 @@ export default function Home() {
           feedback_colaborador: analise.feedback_colaborador,
           plano_acao: analise.plano_acao,
           orientacao_treinamento: analise.orientacao_treinamento,
-          resumo_analise_cruzada: analise.resumo_analise_cruzada,
         })
         .select()
         .single();
 
-      if (dbError) throw dbError;
+      if (dbError) throw new Error('Erro ao salvar monitoria: ' + dbError.message);
 
-      // 4. Save criteria
+      // 6. Salvando critérios
+      addLog('Salvando critérios detalhados...');
       const criteriosToInsert = analise.criterios.map((c: any) => ({
         monitoria_id: monitoria.id,
         ...c,
@@ -145,63 +147,42 @@ export default function Home() {
         pontuacao_final: c.pontuacao_ia,
       }));
 
-      const { error: critError } = await supabase
-        .from('monitoria_criterios')
-        .insert(criteriosToInsert);
+      const { error: critError } = await supabase.from('monitoria_criterios').insert(criteriosToInsert);
+      if (critError) throw new Error('Erro ao salvar critérios: ' + critError.message);
 
-      if (critError) throw critError;
-
-      // 5. Upload files to Storage & Save to DB
-      console.log("Tentando upload no Supabase Storage...");
-      let someUploadFailed = false;
-
+      // 7. Salvando arquivos no Storage (Opcional)
+      setCurrentStep(6);
+      addLog('Tentando salvar arquivos no Storage (Opcional)...');
+      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const fileName = `${monitoria.id}/${Date.now()}_${file.name}`;
+        const storagePath = `${monitoria.id}/${Date.now()}_${file.name}`;
         
         try {
-          const { error: uploadError } = await supabase.storage
-            .from('monitoria-arquivos')
-            .upload(fileName, file);
-
-          if (uploadError) {
-            console.log("Upload falhou, continuando análise sem salvar arquivo");
-            someUploadFailed = true;
+          const { error: uploadError } = await supabase.storage.from('monitoria-arquivos').upload(storagePath, file);
+          if (!uploadError) {
+            const { data: pub } = supabase.storage.from('monitoria-arquivos').getPublicUrl(storagePath);
+            await supabase.from('arquivos_monitoria').insert({
+              monitoria_id: monitoria.id,
+              nome_arquivo: file.name,
+              tipo_arquivo: file.type,
+              url_arquivo: pub.publicUrl,
+              storage_path: storagePath,
+              transcricao_texto: fileData[i].conteudo,
+            });
           }
-
-          const { data: publicUrl } = supabase.storage
-            .from('monitoria-arquivos')
-            .getPublicUrl(fileName);
-
-          await supabase.from('arquivos_monitoria').insert({
-            monitoria_id: monitoria.id,
-            nome_arquivo: file.name,
-            tipo_arquivo: file.type,
-            url_arquivo: publicUrl.publicUrl,
-            storage_path: fileName,
-            transcricao_texto: fileData[i].conteudo,
-          });
         } catch (e) {
-          console.warn("Erro ao processar arquivo no storage:", e);
-          someUploadFailed = true;
+          addLog(`Aviso: Falha ao salvar arquivo ${file.name} no Storage.`);
         }
       }
 
-      if (someUploadFailed || connectionStatus?.bucketsOk === false) {
-        alert("A análise foi concluída, mas os arquivos não foram salvos no Storage porque o bucket monitoria-arquivos não foi encontrado ou houve um erro de permissão.");
-      }
+      addLog('Processo finalizado com sucesso!');
+      setTimeout(() => navigate(`/admin/monitoria/${monitoria.id}`), 1000);
 
-      // 6. Final Sync
-      await supabase.from('monitorias').update({
-        arquivo_nome: files[0]?.name,
-        arquivo_url: files.length > 0 ? (supabase.storage.from('monitoria-arquivos').getPublicUrl(`${monitoria.id}/${files[0].name}`).data.publicUrl) : null
-      }).eq('id', monitoria.id);
-
-      // Navigate to details
-      navigate(`/admin/monitoria/${monitoria.id}`);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Ocorreu um erro inesperado.');
+      addLog(`Erro: ${err.message}`);
+      setError(`Erro na etapa ${currentStep}: ${err.message}`);
+      setCurrentStep(-1);
     } finally {
       setLoading(false);
     }
@@ -342,7 +323,54 @@ export default function Home() {
           </div>
         )}
 
-        {error && (
+        {loading || currentStep !== 0 ? (
+          <div className="mt-8 bg-[#0B1F3A] rounded-xl p-6 text-white overflow-hidden">
+            <h3 className="text-sm font-bold mb-4 flex items-center gap-2 text-[#4DA8FF]">
+              <Loader2 className={currentStep > 0 && currentStep < 6 ? "animate-spin" : ""} size={16} />
+              Status da Análise
+            </h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span>Progresso Geral</span>
+                <span>{currentStep === -1 ? 'ERRO' : currentStep === 6 ? '100%' : `${Math.round((currentStep / 6) * 100)}%`}</span>
+              </div>
+              <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 ${currentStep === -1 ? 'bg-red-500 w-full' : 'bg-[#4DA8FF]'}`}
+                  style={{ width: currentStep === -1 ? '100%' : `${(currentStep / 6) * 100}%` }}
+                />
+              </div>
+              
+              <div className="bg-black/20 rounded-lg p-4 font-mono text-[10px] space-y-1 max-h-40 overflow-y-auto">
+                {analysisLogs.map((log, i) => (
+                  <div key={i} className={log.includes('Erro') ? 'text-red-400' : 'text-gray-300'}>
+                    {log}
+                  </div>
+                ))}
+                {loading && <div className="text-[#4DA8FF] animate-pulse">_</div>}
+              </div>
+            </div>
+
+            {currentStep === -1 && (
+              <div className="mt-4 flex gap-3">
+                <button 
+                  onClick={handleAnalise}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
+                >
+                  Tentar Novamente
+                </button>
+                <button 
+                  onClick={() => { setFiles([]); setError(null); setCurrentStep(0); setAnalysisLogs([]); }}
+                  className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"
+                >
+                  Limpar e trocar arquivos
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {error && !loading && currentStep === 0 && (
           <div className="mt-8 bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 text-red-700">
             <AlertCircle size={20} />
             <p className="text-sm">{error}</p>

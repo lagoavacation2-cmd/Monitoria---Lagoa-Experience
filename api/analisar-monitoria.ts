@@ -26,190 +26,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Dados incompletos para análise." });
     }
 
-    const contextFiles = arquivos.map((f: any) => `Arquivo: ${f.nome}\nConteúdo/Transcrição: ${f.conteudo}`).join('\n\n---\n\n');
+    // LIMPEZA E LIMITAÇÃO DE TEXTO
+    const cleanText = (text: string) => {
+      if (!text) return "";
+      return text
+        .replace(/\s+/g, ' ') // Remove espaços e quebras excessivas
+        .replace(/(Mensagem automática:|Seu atendimento foi iniciado:)/gi, '') // Remove padrões repetitivos se existirem
+        .trim();
+    };
+
+    let totalChars = 0;
+    const MAX_CHARS = 40000;
+
+    const contextFiles = arquivos.map((f: any) => {
+      const conteudoLimpo = cleanText(f.conteudo || "");
+      const disponivel = MAX_CHARS - totalChars;
+      
+      if (disponivel <= 0) return "";
+      
+      const corte = conteudoLimpo.slice(0, disponivel);
+      totalChars += corte.length;
+      
+      return `Arquivo: ${f.nome}\nConteúdo: ${corte}`;
+    }).filter(Boolean).join('\n\n---\n\n');
 
     const promptSDR = `
-Você é uma IA especialista em monitoria de atendimentos do Lagoa Experience. Analise os atendimentos de um SDR.
-A análise DEVE conter exatamente os 40 itens abaixo, distribuídos nos critérios principais:
-
-1. Comunicação e Apresentação Inicial (10 pontos)
-1.1 Saudação com sorriso perceptível na voz (2.5)
-1.2 Identificação com nome, cargo e Grupo Lagoa Quente (2.5)
-1.3 Validação do nome do cliente e personalização imediata (2.5)
-1.4 Verificação respeitosa de tempo disponível para conversa (2.5)
-
-2. Apresentação do Conceito de Experiência (15 pontos)
-2.1 Conectou o contato ao cadastro feito pelo cliente (2.5)
-2.2 Explicou o Grupo Lagoa Quente e o programa Lagoa Vacation (2.5)
-2.3 Mencionou que o cliente foi selecionado para experiência com até 50% de desconto (2.5)
-2.4 Criou vínculo emocional: lazer, descanso, família e bem-estar (2.5)
-2.5 Perguntou se o cliente já conhece Caldas Novas ou o Grupo Lagoa (2.5)
-2.6 Se já hospedado, explorou experiência anterior e gerou conexão emocional (2.5)
-
-3. Explicação da Apresentação Obrigatória (12 pontos)
-3.1 Informou claramente sobre os 90 minutos de apresentação (3)
-3.2 Reforçou que a apresentação ocorre durante a hospedagem e é obrigatória (3)
-3.3 Explicou que é exclusiva para o casal, sem compromisso de compra (3)
-3.4 Verificou se há dúvidas e respondeu com segurança (3)
-
-4. Qualificação Consultiva e Completa (25 pontos)
-4.1 Coletou nome completo do cliente e do cônjuge (2.5)
-4.2 Coletou cidade e estado onde moram (2.5)
-4.3 Verificou profissão do casal (2.5)
-4.4 Verificou se a casa é própria ou não (2.5)
-4.5 Verificou estado civil e tempo de relacionamento (2.5)
-4.6 Verificou modelo e ano do carro da família (2.5)
-4.7 Verificou se tem filhos, quantidade e idade aproximada (2.5)
-4.8 Identificou estilo de vida, frequência de viagens e lazer em família (2.5)
-4.9 Checou se o perfil se enquadra na política vigente (2.5)
-4.10 Quando necessário, solicitou autorização de exceção com responsabilidade (2.5)
-
-5. Técnica Comercial (15 pontos)
-5.1 Seguiu o script com naturalidade, sem parecer robótico (2.5)
-5.2 Transmitiu energia e profissionalismo (2.5)
-5.3 Aplicou gatilhos mentais: escassez, urgência e exclusividade (2.5)
-5.4 Identificou e lidou bem com objeções iniciais (2.5)
-5.5 Adaptou a linguagem conforme o perfil do cliente (2.5)
-5.6 Confirmou o interesse do cliente em seguir para reserva (2.5)
-
-6. Encaminhamento do Lead (13 pontos)
-6.1 Encaminhou o lead corretamente para o Closer (2.6)
-6.2 Informou o que o cliente vai receber: valores, regulamento, voucher etc. (2.6)
-6.3 Confirmou e registrou os dados corretos de contato (2.6)
-6.4 Fez o registro completo e correto no CRM ou planilha (2.6)
-6.5 Atualizou a etapa correta do funil (2.6)
-
-7. Qualidade Global (10 pontos)
-7.1 Linguagem clara, cordial e consultiva (2)
-7.2 Postura empática e sem pressa (2)
-7.3 Comunicação fluida, sem vícios de linguagem (2)
-7.4 Domínio total do processo e informações (2)
-7.5 Condução com segurança, simpatia e ritmo adequado (2)
-
-REGRAS OBRIGATÓRIAS SDR:
-- O SDR deve conectar cadastro, apresentar conceito, explicar 90 minutos, obrigatoriedade durante hospedagem, exclusividade para casal, ausência de compromisso de compra, qualificar perfil completo e encaminhar corretamente ao Closer.
+Analise como SDR do Lagoa Experience.
+LISTA FIXA DE 40 ITENS:
+1.1 Saudação voz (2.5), 1.2 ID Empresa/Cargo (2.5), 1.3 Nome Cliente (2.5), 1.4 Tempo (2.5)
+2.1 Cadastro (2.5), 2.2 Lagoa Vacation (2.5), 2.3 Desconto 50% (2.5), 2.4 Emoção (2.5), 2.5 Conhece Caldas (2.5), 2.6 Experiência Ant. (2.5)
+3.1 90 min (3), 3.2 Obrigatória (3), 3.3 Casal/Sem Compro. (3), 3.4 Dúvidas (3)
+4.1 Nomes (2.5), 4.2 Cidade (2.5), 4.3 Profissão (2.5), 4.4 Casa (2.5), 4.5 Civil/Tempo (2.5), 4.6 Carro (2.5), 4.7 Filhos (2.5), 4.8 Lazer (2.5), 4.9 Perfil (2.5), 4.10 Exceção (2.5)
+5.1 Fluidez (2.5), 5.2 Energia (2.5), 5.3 Gatilhos (2.5), 5.4 Objeções (2.5), 5.5 Linguagem (2.5), 5.6 Reserva (2.5)
+6.1 Closer (2.6), 6.2 Voucher/Regras (2.6), 6.3 Dados Contato (2.6), 6.4 CRM (2.6), 6.5 Funil (2.6)
+7.1 Cordial (2), 7.2 Empatia (2), 7.3 Sem Vícios (2), 7.4 Domínio (2), 7.5 Ritmo (2)
 `;
 
     const promptCloser = `
-Você é uma IA especialista em monitoria de atendimentos do Lagoa Experience. Analise os atendimentos de um Closer.
-A análise DEVE conter exatamente os 40 itens abaixo, distribuídos nos critérios principais:
-
-1. Reabertura Estratégica (8 pontos)
-1.1 Saudação cordial e acolhedora (2)
-1.2 Reapresentação como Supervisor(a) do SDR [NOME DO SDR] e consultor(a) do Conceito de Experiência (2)
-1.3 Retomou informações repassadas pelo SDR (2)
-1.4 Confirmou interesse e conduziu com segurança (2)
-
-2. Reforço do Conceito (10 pontos)
-2.1 Reforçou o conceito do Lagoa Vacation e o convite à experiência (2.5)
-2.2 Relembrou o benefício da hospedagem com até 50% de desconto (2.5)
-2.3 Enfatizou os diferenciais do Grupo Lagoa Quente (2.5)
-2.4 Criou vínculo emocional com o cliente: qualidade de vida, lazer e família (2.5)
-
-3. Apresentação da Oferta (14 pontos)
-3.1 Informou o valor de balcão (3.5)
-3.2 Comparou com o valor promocional com desconto (3.5)
-3.3 Explicou o que está incluso: hospedagem, parque, alimentação etc. (3.5)
-3.4 Tornou o valor percebido como vantajoso (3.5)
-
-4. Técnicas de Fechamento (15 pontos)
-4.1 Criou urgência: últimas unidades, fim da campanha etc. (3)
-4.2 Aplicou escassez: condição exclusiva e limitada (3)
-4.3 Trabalhou objeções com firmeza e empatia (3)
-4.4 Solicitou autorização de desconto adicional quando necessário (3)
-4.5 Conduziu para a confirmação com naturalidade (3)
-
-5. Envio do Check-list de Ciência (12 pontos)
-5.1 Enviou o Forms de ciência com todos os pontos obrigatórios: data/horário da apresentação, check-in/check-out, cancelamento, taxa administrativa, distância do parque, não comparecimento, regime de pensão, voucher e informações do empreendimento (4)
-5.2 Reforçou verbalmente os principais pontos do check-list (4)
-5.3 Verificou o recebimento e assinatura do Forms pelo cliente (4)
-
-6. Coleta Completa de Dados para Reserva (14 pontos)
-6.1 Nome completo dos hóspedes, incluindo a família toda (2)
-6.2 CPF de todos os adultos (2)
-6.3 Data de nascimento dos hóspedes (2)
-6.4 Endereço completo com CEP (2)
-6.5 Telefone de contato e e-mail (2)
-6.6 Nome do empreendimento e período definido (2)
-6.7 Quantidade de adultos e crianças (2)
-
-7. Procedimentos Operacionais / Registro em Sistema (13 pontos)
-7.1 Lançou a reserva corretamente na planilha de reservas de acompanhamento (2.6)
-7.2 Lançou todos os dados no sistema TSE sem erros (2.6)
-7.3 Garantiu que o cliente recebeu o voucher com os dados da reserva (2.6)
-7.4 Atualizou status do lead como vendido/reserva confirmada no CRM (2.6)
-7.5 Conferiu todos os dados antes de encerrar o atendimento (2.6)
-
-8. Finalização (7 pontos)
-8.1 Reforçou os benefícios e a importância da apresentação (1.75)
-8.2 Demonstrou empolgação com a chegada do cliente (1.75)
-8.3 Finalizou com o speech padrão de encerramento Lagoa (1.75)
-8.4 Agradeceu o tempo e reforçou suporte em caso de dúvidas (1.75)
-
-9. Qualidade Global (7 pontos)
-9.1 Linguagem clara, consultiva e envolvente (1.75)
-9.2 Atendimento seguro, sem hesitações ou ruídos (1.75)
-9.3 Postura profissional e confiante (1.75)
-9.4 Domínio total do processo e sistema (1.75)
-
-REGRAS OBRIGATÓRIAS CLOSER:
-- O Closer DEVE se apresentar como Supervisor(a) do SDR [NOME] e consultor(a) do Conceito de Experiência. Se não houver essa apresentação específica, penalize o critério Reabertura Estratégica.
+Analise como Closer do Lagoa Experience.
+LISTA FIXA DE 40 ITENS:
+1.1 Saudação (2), 1.2 Supervisor SDR (2), 1.3 Retomou Info (2), 1.4 Segurança (2)
+2.1 Conceito (2.5), 2.2 Desconto 50% (2.5), 2.3 Diferenciais (2.5), 2.4 Emoção (2.5)
+3.1 Balcão (3.5), 3.2 Promo (3.5), 3.3 Incluso (3.5), 3.4 Vantagem (3.5)
+4.1 Urgência (3), 4.2 Escassez (3), 4.3 Objeções (3), 4.4 Desc. Adic (3), 4.5 Fechamento (3)
+5.1 Forms Ciência (4), 5.2 Reforço Verbal (4), 5.3 Assinatura (4)
+6.1 Nomes (2), 6.2 CPF (2), 6.3 Nascimento (2), 6.4 Endereço (2), 6.5 Email (2), 6.6 Período (2), 6.7 Qtd Pax (2)
+7.1 Planilha (2.6), 7.2 TSE (2.6), 7.3 Voucher (2.6), 7.4 CRM status (2.6), 7.5 Conferência (2.6)
+8.1 Benefícios (1.75), 8.2 Empolgação (1.75), 8.3 Speech Lagoa (1.75), 8.4 Suporte (1.75)
+9.1 Consultivo (1.75), 9.2 Sem ruídos (1.75), 9.3 Postura (1.75), 9.4 Sistema (1.75)
 `;
 
     const mainPrompt = `
-Contexto de Atendimento:
-Colaborador: ${colaborador}
 Tipo: ${tipo}
-Observações do Avaliador: ${observacoes}
-
-Arquivos Analisados:
-${contextFiles}
+Colaborador: ${colaborador}
+Obs: ${observacoes}
+Conteúdo: ${contextFiles}
 
 ${tipo === 'SDR' ? promptSDR : promptCloser}
 
-A resposta DEVE ser um JSON válido com a seguinte estrutura:
+RESPONDA APENAS JSON:
 {
-  "nota_ia": 0,
-  "nota_final": 0,
-  "classificacao": "Excelente/Bom/Regular/Abaixo do esperado/Crítico",
-  "resumo_geral": "texto",
-  "pontos_fortes": "texto",
-  "pontos_melhoria": "texto",
-  "falhas_criticas": "texto",
-  "impacto_falhas": "texto",
-  "feedback_colaborador": "texto",
-  "plano_acao": "texto",
-  "orientacao_treinamento": "texto",
-  "criterios": [
-    {
-      "codigo": "1.1",
-      "criterio": "Nome do Critério Principal",
-      "item_avaliado": "Descrição exata do item dos formulários",
-      "peso": 2.5,
-      "status_ia": "SIM/PARCIAL/NÃO",
-      "pontuacao_ia": 2.5,
-      "comentario_ia": "Motivação detalhada",
-      "status_final": "SIM/PARCIAL/NÃO",
-      "pontuacao_final": 2.5,
-      "fonte_evidencia": "Local exato no texto",
-      "orientacao_correcao": "O que fazer para melhorar",
-      "observacao_admin": ""
-    }
-  ]
+  "nota_ia": 0, "nota_final": 0, "classificacao": "", "resumo_geral": "", 
+  "pontos_fortes": "", "pontos_melhoria": "", "feedback_colaborador": "", "plano_acao": "", "orientacao_treinamento": "",
+  "criterios": [{ "codigo": "", "status_ia": "SIM/PARCIAL/NÃO", "comentario_ia": "", "fonte_evidencia": "" }]
 }
-
-PONTUAÇÃO: SIM (100% do peso), PARCIAL (50% do peso), NÃO (0% do peso).
-Importante: 
-1. A nota_final e nota_ia devem refletir a soma exata dos itens.
-2. A soma dos pesos deve ser exatamente 100.
-3. Se status_ia for SIM, pontuacao_ia = peso. Se PARCIAL, pontuacao_ia = peso * 0.5. Se NÃO, pontuacao_ia = 0.
-4. Avalie CADA UM dos 40 itens detalhados. Se o item não foi identificado, marque como NÃO com pontuação 0.
-5. Use linguagem profissional e humanizada em português.
-6. Responda APENAS o JSON estruturado.
 `;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55s timeout
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
