@@ -27,32 +27,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // LIMPEZA E LIMITAÇÃO DE TEXTO
-    const cleanText = (text: string) => {
+    const compactarTextoAtendimento = (text: string) => {
       if (!text) return "";
-      return text
-        .replace(/\s+/g, ' ') // Remove espaços e quebras excessivas
-        .replace(/(Mensagem automática:|Seu atendimento foi iniciado:)/gi, '') // Remove padrões repetitivos se existirem
+      let cleaned = text
+        .replace(/\n+/g, '\n') // Remove múltiplas quebras de linha
+        .replace(/\s{2,}/g, ' ') // Remove múltiplos espaços
+        .replace(/(Mensagem automática:|Seu atendimento foi iniciado:|Início do atendimento:|Atendimento de:)/gi, '')
         .trim();
+      
+      const MAX_CHARS_COMPACT = 15000;
+      if (cleaned.length > MAX_CHARS_COMPACT) {
+        // Mantém os primeiros 7.5k e os últimos 7.5k para não perder o início e o fim (checklist/finalização)
+        const half = MAX_CHARS_COMPACT / 2;
+        cleaned = cleaned.slice(0, half) + "\n\n[...] [TEXTO COMPACTADO PELA IA PARA OTIMIZAR VELOCIDADE] \n\n" + cleaned.slice(-half);
+      }
+      return cleaned;
     };
 
     let totalChars = 0;
-    const MAX_CHARS = 40000;
-
     const contextFiles = arquivos.map((f: any) => {
-      const conteudoLimpo = cleanText(f.conteudo || "");
-      const disponivel = MAX_CHARS - totalChars;
-      
-      if (disponivel <= 0) return "";
-      
-      const corte = conteudoLimpo.slice(0, disponivel);
-      totalChars += corte.length;
-      
-      return `Arquivo: ${f.nome}\nConteúdo: ${corte}`;
+      const conteudoLimpo = compactarTextoAtendimento(f.conteudo || "");
+      return `Arquivo: ${f.name}\nConteúdo: ${conteudoLimpo}`;
     }).filter(Boolean).join('\n\n---\n\n');
 
     const promptSDR = `
-Analise como SDR do Lagoa Experience.
-LISTA FIXA DE 40 ITENS:
+Avalie atendimento SDR. Critérios (40 itens):
 1.1 Saudação voz (2.5), 1.2 ID Empresa/Cargo (2.5), 1.3 Nome Cliente (2.5), 1.4 Tempo (2.5)
 2.1 Cadastro (2.5), 2.2 Lagoa Vacation (2.5), 2.3 Desconto 50% (2.5), 2.4 Emoção (2.5), 2.5 Conhece Caldas (2.5), 2.6 Experiência Ant. (2.5)
 3.1 90 min (3), 3.2 Obrigatória (3), 3.3 Casal/Sem Compro. (3), 3.4 Dúvidas (3)
@@ -63,8 +62,7 @@ LISTA FIXA DE 40 ITENS:
 `;
 
     const promptCloser = `
-Analise como Closer do Lagoa Experience.
-LISTA FIXA DE 40 ITENS:
+Avalie atendimento Closer. Critérios (40 itens):
 1.1 Saudação (2), 1.2 Supervisor SDR (2), 1.3 Retomou Info (2), 1.4 Segurança (2)
 2.1 Conceito (2.5), 2.2 Desconto 50% (2.5), 2.3 Diferenciais (2.5), 2.4 Emoção (2.5)
 3.1 Balcão (3.5), 3.2 Promo (3.5), 3.3 Incluso (3.5), 3.4 Vantagem (3.5)
@@ -77,24 +75,20 @@ LISTA FIXA DE 40 ITENS:
 `;
 
     const mainPrompt = `
-Tipo: ${tipo}
-Colaborador: ${colaborador}
-Obs: ${observacoes}
-Conteúdo: ${contextFiles}
+Atendimento [${tipo}]. 
+Texto: ${contextFiles}
 
 ${tipo === 'SDR' ? promptSDR : promptCloser}
 
-RESPONDA APENAS JSON:
+Responda APENAS JSON:
 {
-  "nota_ia": 0, "nota_final": 0, "classificacao": "", "resumo_geral": "", 
-  "pontos_fortes": "", "pontos_melhoria": "", "feedback_colaborador": "", "plano_acao": "", "orientacao_treinamento": "",
-  "falhas_criticas": "", "impacto_falhas": "",
-  "criterios": [{ "codigo": "", "status_ia": "SIM/PARCIAL/NÃO", "comentario_ia": "", "fonte_evidencia": "" }]
+  "criterios": [{ "codigo": "1.1", "status_ia": "SIM/PARCIAL/NÃO", "comentario_ia": "", "fonte_evidencia": "" }],
+  "resumo_geral": "", "pontos_fortes": "", "pontos_melhoria": ""
 }
 `;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s timeout
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",

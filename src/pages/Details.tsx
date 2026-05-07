@@ -34,6 +34,7 @@ export default function Details() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const [generatingFeedback, setGeneratingFeedback] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,6 +61,41 @@ export default function Details() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGerarFeedback = async () => {
+    if (generatingFeedback) return;
+    setGeneratingFeedback(true);
+    try {
+      const response = await fetch('/api/gerar-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monitoria, criterios })
+      });
+
+      if (!response.ok) throw new Error('Falha ao gerar feedback');
+      const data = await response.json();
+
+      // Update local state
+      setMonitoria({ ...monitoria, ...data });
+
+      // Save to Supabase
+      const { error } = await supabase.from('monitorias').update({
+        feedback_colaborador: data.feedback_colaborador,
+        plano_acao: data.plano_acao,
+        orientacao_treinamento: data.orientacao_treinamento,
+        falhas_criticas: data.falhas_criticas,
+        impacto_falhas: data.impacto_falhas
+      }).eq('id', id);
+
+      if (error) throw error;
+      alert('Feedback detalhado gerado com sucesso!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao gerar feedback: ' + err.message);
+    } finally {
+      setGeneratingFeedback(false);
     }
   };
 
@@ -312,8 +348,8 @@ export default function Details() {
   );
   if (!monitoria) return <div className="p-20 text-center font-bold text-gray-400">Monitoria não encontrada ou sem permissão.</div>;
 
-  const currentScore = criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0);
-  const currentClassificacao = currentScore >= 90 ? 'Excelente' : currentScore >= 80 ? 'Bom' : currentScore >= 70 ? 'Regular' : 'Crítico';
+  const currentScore = Math.round(criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0) * 10) / 10;
+  const currentClassificacao = classificarNota(currentScore);
 
   // Group by criteria for summary cards
   const criteriaData = criterios.reduce((acc: any, curr) => {
@@ -365,6 +401,14 @@ export default function Details() {
         </button>
         <div className="flex flex-wrap gap-3">
           <button 
+            onClick={handleGerarFeedback}
+            disabled={generatingFeedback}
+            className="flex items-center gap-2 bg-[#4DA8FF] text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#102B52] transition-all shadow-sm active:scale-95 disabled:opacity-50"
+          >
+            {generatingFeedback ? <Loader2 className="animate-spin" size={18} /> : <MessageSquare size={18} />}
+            Gerar Feedback Detalhado
+          </button>
+          <button 
             onClick={handleExportPDF}
             className="flex items-center gap-2 bg-white border border-gray-100 text-[#102B52] px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
           >
@@ -400,9 +444,9 @@ export default function Details() {
               <span className="text-2xl font-bold opacity-30">/ 100</span>
             </div>
             <div className={`mt-4 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border ${
-               currentClassificacao === 'Excelente' ? 'bg-emerald-400 border-emerald-500 text-white' :
-               currentClassificacao === 'Bom' ? 'bg-blue-400 border-blue-500 text-white' :
-               currentClassificacao === 'Regular' ? 'bg-amber-400 border-amber-500 text-white' :
+               currentClassificacao.includes('Excelente') ? 'bg-emerald-400 border-emerald-500 text-white' :
+               currentClassificacao.includes('Bom') ? 'bg-blue-400 border-blue-500 text-white' :
+               currentClassificacao.includes('regular') ? 'bg-amber-400 border-amber-500 text-white' :
                'bg-red-500 border-red-600 text-white'
             }`}>
               {currentClassificacao}

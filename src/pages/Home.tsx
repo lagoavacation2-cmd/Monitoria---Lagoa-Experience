@@ -77,31 +77,71 @@ export default function Home() {
         })
       );
 
-      // 3. Preparando prompt e enviando para IA
-      setCurrentStep(3);
-      addLog('Enviando dados para processamento da IA (OpenRouter)...');
-      addLog('Aguardando resposta da IA (pode levar até 60 segundos)...');
-
-      const response = await fetch('/api/analisar-monitoria', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipo,
-          colaborador,
-          avaliador,
-          observacoes,
-          arquivos: fileData,
-        }),
-      });
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const rawText = await response.text();
-        throw new Error('A IA não retornou um formato válido. Resposta: ' + rawText.slice(0, 200));
+      const totalChars = fileData.reduce((acc, curr) => acc + curr.conteudo.length, 0);
+      addLog(`Volume total de texto: ${totalChars} caracteres.`);
+      if (totalChars > 15000) {
+        addLog('O atendimento será compactado para melhorar a velocidade da análise.');
       }
 
-      const analise = await response.json();
-      if (!response.ok) throw new Error(analise.error || 'Erro na análise da IA');
+      // 3. Preparando prompt e enviando para IA
+      setCurrentStep(3);
+      
+      let analise: any = null;
+      let attempt = 1;
+      const MAX_ATTEMPTS = 2;
+
+      while (attempt <= MAX_ATTEMPTS) {
+        addLog(`Iniciando tentativa ${attempt} de processamento da IA...`);
+        addLog('Aguardando resposta da IA. Esta etapa pode levar até 2 ou 3 minutos em arquivos maiores.');
+        
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s timeout no frontend
+
+          const response = await fetch('/api/analisar-monitoria', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              tipo,
+              colaborador,
+              avaliador,
+              observacoes,
+              arquivos: fileData,
+            }),
+          });
+
+          clearTimeout(timeoutId);
+
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            const rawText = await response.text();
+            throw new Error('A IA não retornou um formato válido. Resposta: ' + rawText.slice(0, 200));
+          }
+
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Erro na análise da IA');
+          
+          analise = result;
+          break; // Sucesso, sai do loop
+        } catch (fetchErr: any) {
+          const isAbort = fetchErr.name === 'AbortError' || fetchErr.message?.toLowerCase().includes('aborted');
+          
+          if (isAbort) {
+            addLog('A análise foi interrompida por limite de tempo.');
+            if (attempt < MAX_ATTEMPTS) {
+              addLog('O sistema vai tentar novamente com uma versão otimizada.');
+              attempt++;
+              continue;
+            } else {
+              throw new Error('A análise excedeu o tempo limite (180s) mesmo após tentativa de retry. Tente usar arquivos TXT ou reduza o tamanho do conteúdo.');
+            }
+          }
+          throw fetchErr; // Outros erros não tentam novamente aqui
+        }
+      }
+
+      if (!analise) throw new Error('Não foi possível obter a análise da IA.');
 
       // 4. Recebendo e interpretando JSON
       setCurrentStep(4);
@@ -200,7 +240,11 @@ export default function Home() {
 
     } catch (err: any) {
       addLog(`Erro: ${err.message}`);
-      setError(`Erro na etapa ${currentStep}: ${err.message}`);
+      let userError = err.message;
+      if (userError.toLowerCase().includes('aborted') || userError.toLowerCase().includes('timeout')) {
+        userError = 'A análise excedeu o tempo limite. Tente anexar a conversa em TXT ou reduzir o tamanho do arquivo para melhorar a performance.';
+      }
+      setError(`Erro na etapa ${currentStep}: ${userError}`);
       setCurrentStep(-1);
     } finally {
       setLoading(false);
