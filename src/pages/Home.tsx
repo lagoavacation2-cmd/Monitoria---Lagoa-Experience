@@ -19,6 +19,8 @@ export default function Home() {
   const [analysisLogs, setAnalysisLogs] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<{ ok: boolean; bucketsOk?: boolean; message: string } | null>(null);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [lastMonitoriaId, setLastMonitoriaId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -245,7 +247,8 @@ export default function Home() {
       }
 
       addLog('Processo finalizado com sucesso!');
-      setTimeout(() => navigate(`/admin/monitoria/${monitoria.id}`), 1000);
+      setLastMonitoriaId(monitoria.id);
+      setShowSuccessModal(true);
 
     } catch (err: any) {
       addLog(`Erro: ${err.message}`);
@@ -377,9 +380,14 @@ export default function Home() {
                 <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
                   <div className="flex items-center gap-3 truncate">
                     <FileText size={18} className="text-[#102B52]" />
-                    <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                    <div className="flex flex-col truncate">
+                      <span className="text-sm text-gray-700 font-bold truncate">{file.name}</span>
+                      <span className="text-[10px] text-gray-400 capitalize">
+                        {(file.size / 1024).toFixed(1)} KB • {file.name.split('.').pop()} • Sucesso
+                      </span>
+                    </div>
                   </div>
-                  <button onClick={() => removeFile(i)} className="text-gray-400 hover:text-red-500">
+                  <button onClick={() => removeFile(i)} className="text-gray-400 hover:text-red-500 p-1">
                     <X size={16} />
                   </button>
                 </div>
@@ -481,6 +489,41 @@ export default function Home() {
           critério, garantindo uma avaliação técnica, justa e assertiva.
         </p>
       </div>
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-md w-full p-10 text-center relative overflow-hidden">
+            <div className="bg-[#D9EEFF] w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-[#102B52]">
+              <CheckCircle2 size={40} />
+            </div>
+            <h2 className="text-2xl font-black text-[#0B1F3A] mb-4">Monitoria concluída com sucesso!</h2>
+            <p className="text-gray-600 text-sm mb-8 leading-relaxed">
+              A análise foi gerada, pontuada e salva no sistema. Você já pode consultar os detalhes no Portal Administrador ou exportar o relatório em PDF.
+            </p>
+            <div className="grid grid-cols-1 gap-3">
+              <button 
+                onClick={() => navigate(`/admin/monitoria/${lastMonitoriaId}`)}
+                className="w-full bg-[#102B52] text-white py-4 rounded-xl font-bold hover:bg-[#4DA8FF] transition-all"
+              >
+                Ver Resultado Completo
+              </button>
+              <button 
+                onClick={() => navigate('/admin/historico')}
+                className="w-full bg-gray-100 text-[#102B52] py-4 rounded-xl font-bold hover:bg-gray-200 transition-all"
+              >
+                Ir para Portal Administrador
+              </button>
+              <button 
+                onClick={() => { setShowSuccessModal(false); setFiles([]); setColaborador(''); setObservacoes(''); }}
+                className="w-full text-gray-400 py-2 text-xs font-bold uppercase tracking-widest hover:text-[#102B52]"
+              >
+                Realizar Nova Monitoria
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -48,13 +48,13 @@ export async function extractTextFromFile(file: File): Promise<string> {
         return fullText;
       } catch (pdfError) {
         console.error('Erro ao extrair PDF:', pdfError);
-        return `[Não foi possível extrair o texto do PDF automaticamente: ${file.name}. Tente anexar a conversa em TXT, DOCX ou uma transcrição.]`;
+        return `[Não foi possível ler este arquivo. O PDF pode estar protegido, escaneado ou sem texto extraível. Tente enviar em TXT, DOCX ou PDF pesquisável de: ${file.name}]`;
       }
     }
 
-    return `[Arquivo não processável automaticamente: ${file.name}]`;
+    return `[Formato de arquivo não suportado para extração automática: ${file.name}. Formatos aceitos: PDF, DOCX, TXT, CSV.]`;
   } catch (error) {
     console.error(`Erro ao processar arquivo ${file.name}:`, error);
-    return `[Erro ao processar ${file.name}]`;
+    return `[Erro crítico ao processar ${file.name}: Não foi possível ler este arquivo ou o conteúdo está corrompido.]`;
   }
 }

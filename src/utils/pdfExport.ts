@@ -218,6 +218,29 @@ export const generateAuditPDF = async (monitoria: any, criterios: any[], arquivo
   doc.text(splitImprove, margin, currentY);
   currentY += (splitImprove.length * 5) + 15;
 
+  if (monitoria.falhas_criticas) {
+    checkPageOverflow(40);
+    currentY = addSectionTitle('Identificação de Falhas Críticas', currentY);
+    const criticalFailures = monitoria.falhas_criticas;
+    const splitCritical = doc.splitTextToSize(criticalFailures, contentWidth);
+    doc.setTextColor(239, 68, 68); // Red color
+    doc.text(splitCritical, margin, currentY);
+    doc.setTextColor(16, 43, 82); // Reset to primary
+    currentY += (splitCritical.length * 5) + 10;
+
+    if (monitoria.impacto_falhas) {
+      doc.setFontSize(9);
+      doc.setFont('inter', 'bold');
+      doc.text('Impacto no Negócio:', margin, currentY);
+      currentY += 5;
+      doc.setFont('inter', 'normal');
+      const impact = monitoria.impacto_falhas;
+      const splitImpact = doc.splitTextToSize(impact, contentWidth);
+      doc.text(splitImpact, margin, currentY);
+      currentY += (splitImpact.length * 5) + 15;
+    }
+  }
+
   // 7. Plano de Ação & Orientação Treinamento
   checkPageOverflow(40);
   currentY = addSectionTitle('Plano de Ação', currentY);

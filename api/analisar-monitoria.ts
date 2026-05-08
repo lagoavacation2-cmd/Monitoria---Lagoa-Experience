@@ -51,67 +51,100 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }).filter(Boolean).join('\n\n---\n\n');
 
     const promptSDR = `
-ESTE É UM ATENDIMENTO SDR. AVALIE TODOS OS 40 ITENS ABAIXO:
+ESTE É UM ATENDIMENTO SDR. VOCÊ DEVE AVALIAR TODOS OS 40 ITENS OBRIGATÓRIOS ABAIXO:
+
+BLOCO 1: Comunicação e Apresentação Inicial (10 pts)
 1.1 Saudação voz (2.5), 1.2 ID Empresa/Cargo (2.5), 1.3 Nome Cliente (2.5), 1.4 Tempo (2.5)
+
+BLOCO 2: Apresentação do Conceito de Experiência (15 pts)
 2.1 Cadastro (2.5), 2.2 Lagoa Vacation (2.5), 2.3 Desconto 50% (2.5), 2.4 Emoção (2.5), 2.5 Conhece Caldas (2.5), 2.6 Experiência Ant. (2.5)
+
+BLOCO 3: Explicação da Apresentação Obrigatória (12 pts)
 3.1 90 min (3), 3.2 Obrigatória (3), 3.3 Casal/Sem Compro. (3), 3.4 Dúvidas (3)
+
+BLOCO 4: Qualificação Consultiva e Completa (25 pts)
 4.1 Nomes (2.5), 4.2 Cidade (2.5), 4.3 Profissão (2.5), 4.4 Casa (2.5), 4.5 Civil/Tempo (2.5), 4.6 Carro (2.5), 4.7 Filhos (2.5), 4.8 Lazer (2.5), 4.9 Perfil (2.5), 4.10 Exceção (2.5)
+
+BLOCO 5: Técnica Comercial (15 pts)
 5.1 Fluidez (2.5), 5.2 Energia (2.5), 5.3 Gatilhos (2.5), 5.4 Objeções (2.5), 5.5 Linguagem (2.5), 5.6 Reserva (2.5)
+
+BLOCO 6: Encaminhamento do Lead (13 pts)
 6.1 Closer (2.6), 6.2 Voucher/Regras (2.6), 6.3 Dados Contato (2.6), 6.4 CRM (2.6), 6.5 Funil (2.6)
+
+BLOCO 7: Qualidade Global (10 pts)
 7.1 Cordial (2), 7.2 Empatia (2), 7.3 Sem Vícios (2), 7.4 Domínio (2), 7.5 Ritmo (2)
 `;
 
     const promptCloser = `
-ESTE É UM ATENDIMENTO CLOSER. AVALIE TODOS OS 40 ITENS ABAIXO:
+ESTE É UM ATENDIMENTO CLOSER. VOCÊ DEVE AVALIAR TODOS OS 40 ITENS OBRIGATÓRIOS ABAIXO:
+
+BLOCO 1: Reabertura Estratégica (8 pts)
 1.1 Saudação (2), 1.2 Supervisor SDR (2), 1.3 Retomou Info (2), 1.4 Segurança (2)
+
+BLOCO 2: Reforço do Conceito (10 pts)
 2.1 Conceito (2.5), 2.2 Desconto 50% (2.5), 2.3 Diferenciais (2.5), 2.4 Emoção (2.5)
+
+BLOCO 3: Apresentação da Oferta (14 pts)
 3.1 Balcão (3.5), 3.2 Promo (3.5), 3.3 Incluso (3.5), 3.4 Vantagem (3.5)
+
+BLOCO 4: Técnicas de Fechamento (15 pts)
 4.1 Urgência (3), 4.2 Escassez (3), 4.3 Objeções (3), 4.4 Desc. Adic (3), 4.5 Fechamento (3)
+
+BLOCO 5: Envio do Check-list de Ciência (12 pts)
 5.1 Forms Ciência (4), 5.2 Reforço Verbal (4), 5.3 Assinatura (4)
+
+BLOCO 6: Coleta Completa de Dados para Reserva (14 pts)
 6.1 Nomes (2), 6.2 CPF (2), 6.3 Nascimento (2), 6.4 Endereço (2), 6.5 Email (2), 6.6 Período (2), 6.7 Qtd Pax (2)
+
+BLOCO 7: Procedimentos Operacionais / Registro em Sistema (13 pts) - OBRIGATÓRIO
 7.1 Planilha (2.6), 7.2 TSE (2.6), 7.3 Voucher (2.6), 7.4 CRM status (2.6), 7.5 Conferência (2.6)
+
+BLOCO 8: Finalização (7 pts)
 8.1 Benefícios (1.75), 8.2 Empolgação (1.75), 8.3 Speech Lagoa (1.75), 8.4 Suporte (1.75)
+
+BLOCO 9: Qualidade Global (7 pts)
 9.1 Consultivo (1.75), 9.2 Sem ruídos (1.75), 9.3 Postura (1.75), 9.4 Sistema (1.75)
 `;
 
     const mainPrompt = `
-Você é uma IA especialista em monitoria do Lagoa Experience.
-Analise o atendimento de [${tipo}] abaixo.
+Você é uma IA analista de monitoria e qualidade da Lagoa Experience. Sua missão é realizar uma auditoria PROFUNDA, OPERACIONAL e DETALHADA.
 
-TEXTO DO ATENDIMENTO:
-${contextFiles}
+TIPO DE ATENDIMENTO: [${tipo}]
 
-CRITÉRIOS OBRIGATÓRIOS:
+CRITÉRIOS OBRIGATÓRIOS QUE DEVEM SER AVALIADOS UM POR UM:
 ${tipo === 'SDR' ? promptSDR : promptCloser}
 
-REGRAS DE AVALIAÇÃO:
-- SIM: Atendido totalmente (100% do peso).
-- PARCIAL: Atendido em partes ou com falhas (50% do peso).
-- NÃO: Não atendido ou não identificado (0% do peso).
+TEXTO PARA ANÁLISE:
+${contextFiles}
 
-EXIGÊNCIA DE PROFUNDIDADE:
-1. Comentários (comentario_ia) devem ser DETALHADOS (mínimo 2 frases), explicando o MOTIVO da nota, IMPACTO no cliente e como MELHORAR.
-2. Identifique a FONTE DA EVIDÊNCIA (trecho do texto).
-3. Resumo geral deve ter 2 parágrafos profundos.
-4. Feedback ao colaborador deve ser motivacional, humano e pronto para uso pelo gestor.
+REGRAS DE OURO PARA SUA RESPOSTA:
+1. NÃO SEJA GENÉRICO. Analise cada item separadamente.
+2. COMENTÁRIO IA (comentario_ia): Mínimo de 3 sentenças explicativas. Explique O QUE identificou, ONDE (trecho), POR QUE da nota e IMPACTO na experiência do cliente.
+3. STATUS IA: Use estritamente "SIM" (atendido), "PARCIAL" (parcialmente atendido) ou "NÃO" (não realizado/não identificado).
+4. EVIDÊNCIA: Copie o trecho literal do atendimento que justifica sua pontuação.
+5. RESUMO GERAL: Deve ter 2 parágrafos densos explicando a condução técnica do colaborador.
+6. FEEDBACK HUMANIZADO: Escreva como um gestor falando com o colaborador. Seja profissional, motivador mas firme nos pontos de melhoria.
+7. PLANO DE AÇÃO: Ações práticas do tipo "O que, como e quando".
 
-RESPONDA APENAS JSON:
+RESPONDA APENAS JSON VÁLIDO. NÃO USE MARKDOWN FORA DO JSON.
+
+FORMATO DA RESPOSTA:
 {
-  "resumo_geral": "mínimo 2 parágrafos",
-  "pontos_fortes": "lista",
-  "pontos_melhoria": "lista",
-  "feedback_colaborador": "humanizado e profundo",
-  "plano_acao": "detalhado",
-  "orientacao_treinamento": "focado nos gaps",
-  "falhas_criticas": "identificação de falhas graves",
-  "impacto_falhas": "consequência no negócio",
+  "resumo_geral": "",
+  "pontos_fortes": "",
+  "pontos_melhoria": "",
+  "falhas_criticas": "",
+  "impacto_falhas": "",
+  "feedback_colaborador": "",
+  "plano_acao": "",
+  "orientacao_treinamento": "",
   "criterios": [
     {
-      "codigo": "1.1", 
-      "status_ia": "SIM/PARCIAL/NÃO", 
-      "comentario_ia": "detalhado", 
-      "fonte_evidencia": "trecho exato",
-      "orientacao_correcao": "passo a passo"
+      "codigo": "1.1",
+      "status_ia": "SIM",
+      "comentario_ia": "Comentário detalhado aqui...",
+      "fonte_evidencia": "Trecho aqui...",
+      "orientacao_correcao": "Instrução de como fazer melhor..."
     }
   ]
 }

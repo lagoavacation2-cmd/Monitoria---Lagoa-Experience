@@ -135,7 +135,7 @@ export default function Details() {
         classificacao_final: classificacao,
         classificacao: classificacao,
         revisada_manualmente: true,
-        revisada_por: user?.email || 'Administrador',
+        revisada_por: user || 'Administrador',
         revisada_em: new Date().toISOString()
       }).eq('id', id);
 
@@ -664,9 +664,10 @@ export default function Details() {
                 Resumo Geral
               </h3>
               <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
-                <ReactMarkdown>{monitoria.resumo_geral}</ReactMarkdown>
+                <ReactMarkdown>{monitoria.resumo_geral || 'Resumo não informado.'}</ReactMarkdown>
               </div>
             </div>
+
             <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 relative overflow-hidden group">
               <h3 className="font-black text-[#0B1F3A] mb-6 flex items-center gap-3">
                 <div className="p-2 bg-amber-50 rounded-lg group-hover:bg-amber-500 group-hover:text-white transition-all">
@@ -675,7 +676,7 @@ export default function Details() {
                 Plano de Ação Sugerido
               </h3>
               <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
-                <ReactMarkdown>{monitoria.plano_acao}</ReactMarkdown>
+                <ReactMarkdown>{monitoria.plano_acao || 'Plano de ação não informado.'}</ReactMarkdown>
               </div>
             </div>
             <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 relative overflow-hidden group lg:col-span-2">
@@ -686,22 +687,23 @@ export default function Details() {
                 Feedback Humanizado ao Colaborador
               </h3>
               <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
-                <ReactMarkdown>{monitoria.feedback_colaborador}</ReactMarkdown>
+                <ReactMarkdown>{monitoria.feedback_colaborador || 'Feedback não informado.'}</ReactMarkdown>
               </div>
             </div>
             <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 relative overflow-hidden group lg:col-span-2">
               <h3 className="font-black text-[#0B1F3A] mb-6 flex items-center gap-3">
                 <div className="p-2 bg-purple-50 rounded-lg group-hover:bg-purple-500 group-hover:text-white transition-all">
-                  <BookOpen size={18} />
+                   <AlertCircle size={18} />
                 </div>
                 Orientação de Treinamento
               </h3>
               <div className="markdown-body prose prose-sm text-gray-600 max-w-none">
-                <ReactMarkdown>{monitoria.orientacao_treinamento}</ReactMarkdown>
+                <ReactMarkdown>{monitoria.orientacao_treinamento || 'Orientação não informada.'}</ReactMarkdown>
               </div>
             </div>
           </div>
         </div>
+
 
         <div className="space-y-8 lg:sticky lg:top-24 h-[calc(100vh-140px)] flex flex-col">
           {/* Chat with IA */}
