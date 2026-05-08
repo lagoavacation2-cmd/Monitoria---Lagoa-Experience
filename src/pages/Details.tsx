@@ -30,12 +30,13 @@ export default function Details() {
   const [criterios, setCriterios] = useState<any[]>([]);
   const [arquivos, setArquivos] = useState<any[]>([]);
   const [chat, setChat] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [chatInput, setChatInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [generatingFeedback, setGeneratingFeedback] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchDetails();
@@ -251,10 +252,10 @@ export default function Details() {
   };
 
   const handleSendChat = async () => {
-    if (!newMessage.trim() || chatLoading) return;
+    if (!chatInput.trim() || chatLoading) return;
     
-    const userMsg = newMessage;
-    setNewMessage('');
+    const userMsg = chatInput;
+    setChatInput('');
     setChatLoading(true);
 
     try {
@@ -347,6 +348,11 @@ export default function Details() {
     </div>
   );
   if (!monitoria) return <div className="p-20 text-center font-bold text-gray-400">Monitoria não encontrada ou sem permissão.</div>;
+
+  const handleLimparCampo = () => {
+    setChatInput('');
+    chatInputRef.current?.focus();
+  };
 
   const currentScore = Math.round(criterios.reduce((acc, curr) => acc + (Number(curr.pontuacao_final ?? curr.pontuacao_ia) || 0), 0) * 10) / 10;
   const currentClassificacao = classificarNota(currentScore);
@@ -849,16 +855,18 @@ export default function Details() {
             <div className="p-6 bg-white border-t border-gray-100">
               <div className="flex items-center gap-2 bg-gray-50 rounded-2xl px-4 py-2 border border-gray-200 focus-within:ring-4 focus-within:ring-[#4DA8FF]/5 focus-within:bg-white transition-all">
                 <input 
+                  ref={chatInputRef}
                   type="text" 
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSendChat()}
                   placeholder="Justifique ou peça reanálise..."
                   className="flex-1 bg-transparent py-4 text-sm font-medium outline-none text-[#0B1F3A]"
                 />
                 <button 
+                  type="button"
                   onClick={handleSendChat}
-                  disabled={chatLoading || !newMessage.trim()}
+                  disabled={chatLoading || !chatInput.trim()}
                   className="p-3 bg-[#102B52] text-white rounded-xl hover:bg-[#4DA8FF] transition-all disabled:opacity-50 shadow-lg"
                 >
                   {chatLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
@@ -866,10 +874,11 @@ export default function Details() {
               </div>
               <div className="mt-3 text-center">
                  <button 
-                   onClick={() => setNewMessage('')}
-                   className="text-[9px] font-black uppercase text-gray-300 hover:text-red-400 transition-colors"
+                   type="button"
+                   onClick={handleLimparCampo}
+                   className="text-[9px] font-black uppercase text-gray-300 hover:text-red-400 transition-colors cursor-pointer"
                  >
-                   Limpar Campo de Texto
+                   Limpar Campo
                  </button>
               </div>
             </div>
