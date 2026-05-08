@@ -518,6 +518,91 @@ export default function Details() {
         <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-[#4DA8FF]/10 rounded-full blur-[100px]"></div>
       </div>
 
+      {/* Seções de Auditoria Crítica (NÃO/PARCIAL) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Itens Não Atendidos (ZONA CRÍTICA) */}
+        <div className="bg-white rounded-[2.5rem] p-10 border-2 border-red-100 shadow-xl shadow-red-900/5">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center text-red-500">
+              <AlertCircle size={32} />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-[#0B1F3A]">Itens Não Atendidos</h3>
+              <p className="text-xs font-bold text-red-400 uppercase tracking-widest mt-1">Total: {totalNao} Gaps Críticos</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {criterios.filter(c => (c.status_final || c.status_ia) === 'NÃO').length === 0 ? (
+              <p className="text-center py-10 text-gray-400 font-bold italic">Nenhum item não atendido identificado. Excelente!</p>
+            ) : (
+              criterios.filter(c => (c.status_final || c.status_ia) === 'NÃO').map((c, i) => (
+                <div key={i} className="p-6 bg-red-50/50 rounded-3xl border border-red-100">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[10px] font-black text-red-500 bg-red-100 px-2 py-1 rounded-lg uppercase">{c.codigo}</span>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{c.criterio}</span>
+                  </div>
+                  <h4 className="font-black text-[#0B1F3A] mb-3 leading-tight text-lg">{c.item_avaliado}</h4>
+                  <div className="space-y-3">
+                    <div className="p-4 bg-white rounded-2xl text-xs text-gray-600 border border-red-50">
+                      <span className="font-black text-red-400 block mb-1 uppercase text-[8px] tracking-[0.2em]">IA Parecer:</span>
+                      {c.comentario_ia}
+                    </div>
+                    {c.orientacao_correcao && (
+                      <div className="p-4 bg-red-200/20 rounded-2xl text-xs text-red-800 font-medium">
+                        <span className="font-black block mb-1 uppercase text-[8px] tracking-[0.2em]">Orientação Prática:</span>
+                        {c.orientacao_correcao}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Itens Parcialmente Atendidos */}
+        <div className="bg-white rounded-[2.5rem] p-10 border-2 border-amber-100 shadow-xl shadow-amber-900/5">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500">
+              <HelpCircle size={32} />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-[#0B1F3A]">Atendimento Parcial</h3>
+              <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mt-1">Total: {totalParcial} Oportunidades</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {criterios.filter(c => (c.status_final || c.status_ia) === 'PARCIAL').length === 0 ? (
+              <p className="text-center py-10 text-gray-400 font-bold italic">Nenhum item parcial. Foco no aproveitamento total!</p>
+            ) : (
+              criterios.filter(c => (c.status_final || c.status_ia) === 'PARCIAL').map((c, i) => (
+                <div key={i} className="p-6 bg-amber-50/50 rounded-3xl border border-amber-100">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-2 py-1 rounded-lg uppercase">{c.codigo}</span>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{c.criterio}</span>
+                  </div>
+                  <h4 className="font-black text-[#0B1F3A] mb-3 leading-tight text-lg">{c.item_avaliado}</h4>
+                  <div className="space-y-3">
+                    <div className="p-4 bg-white rounded-2xl text-xs text-gray-600 border border-amber-50">
+                      <span className="font-black text-amber-600 block mb-1 uppercase text-[8px] tracking-[0.2em]">Justificativa IA:</span>
+                      {c.comentario_ia}
+                    </div>
+                    {c.orientacao_correcao && (
+                      <div className="p-4 bg-amber-200/20 rounded-2xl text-xs text-amber-800 font-medium">
+                        <span className="font-black block mb-1 uppercase text-[8px] tracking-[0.2em]">Ação Corretiva:</span>
+                        {c.orientacao_correcao}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Criteria Cards Conformity View */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
          {criteriaArray.map((group: any, idx) => {

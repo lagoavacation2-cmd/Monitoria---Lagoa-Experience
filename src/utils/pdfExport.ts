@@ -194,6 +194,66 @@ export const generateAuditPDF = async (monitoria: any, criterios: any[], arquivo
 
   currentY = doc.lastAutoTable.finalY + 15;
 
+  // --- SEÇÃO: ITENS NÃO ATENDIDOS ---
+  const naoAtendidos = criterios.filter(c => (c.status_final || c.status_ia) === 'NÃO');
+  if (naoAtendidos.length > 0) {
+    checkPageOverflow(40);
+    currentY = addSectionTitle('Itens Não Atendidos (Gaps Críticos)', currentY);
+    
+    const naoRows = naoAtendidos.map(c => [
+      c.codigo,
+      c.item_avaliado,
+      c.comentario_ia,
+      c.orientacao_correcao || 'Reforçar ponto.'
+    ]);
+
+    doc.autoTable({
+      startY: currentY,
+      head: [['Cod', 'Item', 'Justificativa do Gap', 'Orientação para Melhoria']],
+      body: naoRows,
+      theme: 'grid',
+      headStyles: { fillColor: COLORS.DANGER, fontSize: 8 },
+      styles: { fontSize: 7 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 70 },
+        3: { cellWidth: 50 }
+      }
+    });
+    currentY = doc.lastAutoTable.finalY + 15;
+  }
+
+  // --- SEÇÃO: ITENS PARCIAIS ---
+  const parciais = criterios.filter(c => (c.status_final || c.status_ia) === 'PARCIAL');
+  if (parciais.length > 0) {
+    checkPageOverflow(40);
+    currentY = addSectionTitle('Itens Parcialmente Atendidos', currentY);
+    
+    const parcialRows = parciais.map(c => [
+      c.codigo,
+      c.item_avaliado,
+      c.comentario_ia,
+      c.orientacao_correcao || 'Melhorar ponto.'
+    ]);
+
+    doc.autoTable({
+      startY: currentY,
+      head: [['Cod', 'Item', 'Justificativa Parcial', 'Ação Corretiva']],
+      body: parcialRows,
+      theme: 'grid',
+      headStyles: { fillColor: COLORS.WARNING, fontSize: 8 },
+      styles: { fontSize: 7 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 70 },
+        3: { cellWidth: 50 }
+      }
+    });
+    currentY = doc.lastAutoTable.finalY + 15;
+  }
+
   // 5. Feedback para o Colaborador
   checkPageOverflow(40);
   currentY = addSectionTitle('Feedback para o Colaborador', currentY);

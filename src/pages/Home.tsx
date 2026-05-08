@@ -150,14 +150,17 @@ export default function Home() {
         return acc;
       }, { SIM: 0, PARCIAL: 0, NÃO: 0 });
 
-      addLog(`Análise concluída: ${analise.criterios.length} itens avaliados.`);
-      addLog(`Resultado: ${counts.SIM} SIM, ${counts.PARCIAL} PARCIAL, ${counts.NÃO} NÃO.`);
-      addLog(`Nota IA recalculada: ${analise.nota_ia}%`);
+      addLog(`Análise concluída: ${analise.criterios.length} itens avaliados no formulário.`);
+      
+      if (analise.logs_normalizacao) {
+        addLog(`IA retornou ${analise.logs_normalizacao.retornados_ia} itens.`);
+        if (analise.logs_normalizacao.completados_sistema > 0) {
+          addLog(`AVISO: O sistema completou ${analise.logs_normalizacao.completados_sistema} itens ausentes como NÃO (Auditoria Íntegra).`);
+        }
+      }
 
-      // 4. Recebendo e interpretando JSON
-      setCurrentStep(4);
-      addLog('Resposta recebida e processada com sucesso.');
-      addLog(`Nota IA: ${analise.nota_ia}% | Classificação: ${analise.classificacao}`);
+      addLog(`Resultado: ${counts.SIM} SIM, ${counts.PARCIAL} PARCIAL, ${counts.NÃO} NÃO.`);
+      addLog(`Nota IA recalculada pelo sistema: ${analise.nota_ia}% | Classificação: ${analise.classificacao}`);
 
       // 5. Salvando no Supabase
       setCurrentStep(5);
